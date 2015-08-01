@@ -1,0 +1,1 @@
+--------------------------------------- platform/common/driver/wifi-------------------------------------wifi = {	{ name = "8192cu",      prompt = "RealTek_8192CU" },	{ name = "8188eu",      prompt = "RealTek_8188EU" },	{ name = "8189es",      prompt = "RealTek_8189ES" },	{ name = "AR9271",      prompt = "Atheros_AR9271" },}
