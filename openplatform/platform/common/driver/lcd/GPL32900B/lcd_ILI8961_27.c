@@ -299,7 +299,8 @@ static void init_disp_comond(void)
 	read_command(0x0d,&value);	
 	
 	//m-sent_command(0x04,0x1b);
-	sent_command(0x04,0x18);
+	//sent_command(0x04,0x18);
+	sent_command(0x04,0x1b);
 	read_command(0x04,&value);
 	sent_command(0x16,0x04);
 	read_command(0x16,&value);

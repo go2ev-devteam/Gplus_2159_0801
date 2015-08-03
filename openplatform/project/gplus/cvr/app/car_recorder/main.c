@@ -3352,11 +3352,7 @@ int RegisterSigint()
 	return 1;
 }
 int pllhd = 0;
-int
-main(
-	int argc,
-	char **argv
-)
+int main(int argc,char **argv)
 {
 	int ret=0;
 	pllhd = PLL_ctl_reqest();

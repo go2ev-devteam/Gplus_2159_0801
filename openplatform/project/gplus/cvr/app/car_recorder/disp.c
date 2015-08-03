@@ -2149,13 +2149,10 @@ scale1_process(
 	return ret;
 }
 
-void
-dispFlip(
-	HANDLE handle
-)
+void dispFlip(HANDLE handle)
 {
 	dispManager_t *pDisp = (dispManager_t *)handle;
-       int ret=0;
+    int ret=0;
 	pDisp->fbIndex = pDisp->fbIndex ^ 1;
 	if (pDisp->layer == DISP_LAYER_PRIMARY) {
 		//ioctl(pDisp->fdDisp, DISPIO_CHANGE_PRI_BITMAP_BUF, &pDisp->fb[pDisp->fbIndex]);

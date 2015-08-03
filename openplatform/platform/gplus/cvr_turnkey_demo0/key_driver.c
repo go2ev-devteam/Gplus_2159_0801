@@ -18,9 +18,9 @@
 #include <linux/workqueue.h>
 #include <mach/gp_gpio_key.h>
 #include <mach/gp_gpio.h>
-#include "platform.h"
+#include <mach/gp_adc.h>
 
-//#define MK_GPIO_INDEX(channel,func,gid,pin) ((channel<<24)|(func<<16)|(gid<<8)|(pin))
+#define MK_GPIO_INDEX(channel,func,gid,pin) ((channel<<24)|(func<<16)|(gid<<8)|(pin))
 
 struct gp_gpio_button_data {
 	struct gp_gpio_keys_button *button;
@@ -37,6 +37,9 @@ struct gp_gpio_keys_drvdata {
 	struct gp_gpio_button_data data[0];
 };
 
+int adc_handle;
+int old_key_value=0;
+static int key_table[]={200,300,400,520,700,850};
 static void gp_gpio_keys_report_event(struct work_struct *work)
 {
 	struct gp_gpio_button_data *bdata =
@@ -44,22 +47,140 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 	struct gp_gpio_keys_button *button = bdata->button;
 	struct input_dev *input = bdata->input;
 	int state;
+	int value;
 
-	gp_gpio_get_value(bdata->handle, &state);
-	state = (state ? 1 : 0) ^ (button->active_low);
-	if (state != bdata->old_state) {
-		if( bdata->debounce_cnt ) {
-			/*debounce end,report key event*/
-			bdata->old_state = state;
-			bdata->debounce_cnt = 0;
-			printk("report key %d %d %d\n", button->code, state, !!state);
-			input_event(input, EV_KEY, button->code, !!state);
-			input_sync(input);
-		} else {
-			/*start debounce*/
-			bdata->debounce_cnt ++;
+	int key_value;
+	
+	if(button->code ==KEY_UP ||button->code == KEY_ESC)
+	{
+		gp_gpio_get_value(bdata->handle, &state);
+		state = (state ? 1 : 0) ^ (button->active_low);
+		if (state != bdata->old_state) {
+			if( bdata->debounce_cnt ) {
+				/*debounce end,report key event*/
+				bdata->old_state = state;
+				bdata->debounce_cnt = 0;
+				input_event(input, EV_KEY, button->code, !!state);
+				input_sync(input);
+			} else {
+				/*start debounce*/
+				bdata->debounce_cnt ++;
+			}
 		}
 	}
+	value = gp_adc_read(adc_handle);
+	//printk("value = %d\n",value);
+	if(value<key_table[0])
+	{
+		key_value = 1;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 1;
+			input_event(input, EV_KEY, KEY_DOWN, 0);
+			input_sync(input);
+		}
+	}
+	else if(value<key_table[1])
+	{
+		key_value = 2;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 2;
+			input_event(input, EV_KEY, KEY_UP, 0);
+			input_sync(input);
+		}
+	}
+	else if(value<key_table[2])
+	{
+		key_value = 3;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 3;
+			//printk("KEY_UP press\n");
+			input_event(input, EV_KEY, KEY_RIGHT, 0);
+			input_sync(input);
+		}
+	}
+	else if(value<key_table[3])
+	{
+		key_value = 4;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 4;
+			//printk("KEY_MUTE press\n");
+			input_event(input, EV_KEY, KEY_MUTE, 0);
+			input_sync(input);
+		}
+	}
+	else if(value<key_table[4])
+	{
+		key_value = 5;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 5;
+			//printk("KEY_RIGHT press\n");
+			input_event(input, EV_KEY, KEY_LEFT, 0);
+			input_sync(input);
+		}
+	}
+	else if(value<key_table[5])
+	{
+		key_value = 6;
+		if(key_value != old_key_value)
+		{
+			old_key_value = 6;
+			//printk("KEY_EXIT press\n");
+			input_event(input, EV_KEY, KEY_EXIT, 0);
+			input_sync(input);
+		}
+	}
+	else
+	{
+		if(old_key_value == 1)
+		{
+			old_key_value = 0;
+			printk("KEY_DOWN release\n");
+			input_event(input, EV_KEY, KEY_DOWN, 1);
+			input_sync(input);			
+		}
+		else if(old_key_value == 2)
+		{
+			old_key_value = 0;
+			printk("KEY_LEFT release\n");
+			input_event(input, EV_KEY, KEY_UP, 1);
+			input_sync(input);			
+		}
+		else if(old_key_value == 3)
+		{
+			old_key_value = 0;
+			printk("KEY_MUTE release\n");
+			input_event(input, EV_KEY, KEY_RIGHT, 1);
+			input_sync(input);			
+		}
+		else if(old_key_value == 4)
+		{
+			old_key_value = 0;
+			printk("KEY_EXIT release\n");
+			input_event(input, EV_KEY, KEY_MUTE, 1);
+			input_sync(input);			
+		}	
+		else if(old_key_value == 5)
+		{
+			old_key_value = 0;
+			printk("KEY_RIGHT release\n");
+			input_event(input, EV_KEY, KEY_LEFT, 1);
+			input_sync(input);			
+		}	
+		else if(old_key_value == 6)
+		{
+			old_key_value = 0;
+			printk("KEY_EXIT release\n");
+			input_event(input, EV_KEY, KEY_EXIT, 1);
+			input_sync(input);			
+		}	
+	}
+	
+	
 	/*next scan, 20ms*/
 	mod_timer( &bdata->timer, jiffies+HZ/50);
 }
@@ -111,23 +232,25 @@ static int __devinit gp_gpio_keys_probe(struct platform_device *pdev)
 		setup_timer(&bdata->timer, gp_gpio_keys_timer, (unsigned long)bdata);
 		INIT_WORK(&bdata->work, gp_gpio_keys_report_event);
 
-		handle = gp_gpio_request(button->gpio, button->desc ?: "gpio_keys");
-		if (IS_ERR((void*)handle)) {
-			pr_err("gpio-keys: failed to request GPIO %d,"
-				" error %d\n", button->gpio, handle);
-			goto fail2;
-		}
+		if(i<2)
+		{
+			handle = gp_gpio_request(button->gpio, button->desc ?: "gpio_keys");
+			if (IS_ERR((void*)handle)) {
+				pr_err("gpio-keys: failed to request GPIO %d,"
+					" error %d\n", button->gpio, handle);
+				goto fail2;
+			}
 
-		bdata->handle = handle;
-		error = gp_gpio_set_input(handle, (button->active_low)? GPIO_PULL_HIGH: GPIO_PULL_LOW);
-		if (error < 0) {
-			pr_err("gpio-keys: failed to configure input"
-				" direction for GPIO %d, error %d\n",
-				button->gpio, error);
-			gp_gpio_release(handle);
-			goto fail2;
+			bdata->handle = handle;
+			error = gp_gpio_set_input(handle, (button->active_low)? GPIO_PULL_HIGH: GPIO_PULL_LOW);
+			if (error < 0) {
+				pr_err("gpio-keys: failed to configure input"
+					" direction for GPIO %d, error %d\n",
+					button->gpio, error);
+				gp_gpio_release(handle);
+				goto fail2;
+			}
 		}
-
 		input_set_capability(input, EV_KEY, button->code);
 		bdata->old_state = 0;
 		mod_timer(&bdata->timer, jiffies+HZ/2);	//start scan after 500ms
@@ -141,7 +264,8 @@ static int __devinit gp_gpio_keys_probe(struct platform_device *pdev)
 	}
 
 	//device_init_wakeup(&pdev->dev, wakeup);
-
+	adc_handle = gp_adc_request(0, NULL);
+	gp_adc_start(adc_handle, 2); //0 means channel 0
 	return 0;
 
  fail2:
@@ -179,12 +303,13 @@ static int __devexit gp_gpio_keys_remove(struct platform_device *pdev)
 
 static struct gp_gpio_keys_button gp_gpio_keys[]={
 	/*code, index, active low, description*/
-	{KEY_UP,KEY_UP_INDEX,0,"up"},		/*B_KEYSCAN0*/ //menu ok
-	{KEY_ESC,KEY_ESC_INDEX,0,"esc"},	/*B_KEYSCAN5*/	//IOC1
-	{KEY_DOWN,KEY_DOWN_INDEX,0,"down"},	/*B_KEYSCAN1*/ //down ok
-	{KEY_LEFT,KEY_LEFT_INDEX,0,"left"},	/*B_KEYSCAN2*/ // mode ok
-	{KEY_RIGHT,KEY_RIGHT_INDEX,0,"right"},	/*B_KEYSCAN3*/ // up ok //IOD23
-	{KEY_EXIT,KEY_EXIT_INDEX,0,"exit"},	/*B_KEYSCAN3*///enter ok
+	{KEY_UP,MK_GPIO_INDEX(2,0,16,12),1,"up"},		/*B_KEYSCAN0*/   //IOC12
+	{KEY_ESC,MK_GPIO_INDEX(2,2,4,1),0,"esc"},	/*B_KEYSCAN5*/	//IOC1
+	{KEY_DOWN,MK_GPIO_INDEX(2,0,15,10),0,"down"},	/*B_KEYSCAN1*/
+	{KEY_LEFT,MK_GPIO_INDEX(2,0,15,10),0,"left"},	/*B_KEYSCAN2*/
+	{KEY_RIGHT,MK_GPIO_INDEX(2,0,15,10),0,"right"},	/*B_KEYSCAN3*/
+	{KEY_EXIT,MK_GPIO_INDEX(2,0,15,10),0,"exit"},	/*B_KEYSCAN4*/ 
+	{KEY_MUTE,MK_GPIO_INDEX(2,0,15,12),1,"mute"},
 	
 };
 
