@@ -68,9 +68,10 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			}
 		}
 	}
+
 	value = gp_adc_read(adc_handle);
 	//printk("value = %d\n",value);
-	if(value<key_table[0])
+	if(value<key_table[0])//dowm
 	{
 		key_value = 1;
 		if(key_value != old_key_value)
@@ -80,7 +81,7 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			input_sync(input);
 		}
 	}
-	else if(value<key_table[1])
+	else if(value<key_table[1])//menu
 	{
 		key_value = 2;
 		if(key_value != old_key_value)
@@ -90,7 +91,7 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			input_sync(input);
 		}
 	}
-	else if(value<key_table[2])
+	else if(value<key_table[2])//up
 	{
 		key_value = 3;
 		if(key_value != old_key_value)
@@ -101,7 +102,7 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			input_sync(input);
 		}
 	}
-	else if(value<key_table[3])
+	else if(value<key_table[3])//lock
 	{
 		key_value = 4;
 		if(key_value != old_key_value)
@@ -112,7 +113,7 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			input_sync(input);
 		}
 	}
-	else if(value<key_table[4])
+	else if(value<key_table[4])//mode
 	{
 		key_value = 5;
 		if(key_value != old_key_value)
@@ -123,7 +124,7 @@ static void gp_gpio_keys_report_event(struct work_struct *work)
 			input_sync(input);
 		}
 	}
-	else if(value<key_table[5])
+	else if(value<key_table[5])//ok
 	{
 		key_value = 6;
 		if(key_value != old_key_value)

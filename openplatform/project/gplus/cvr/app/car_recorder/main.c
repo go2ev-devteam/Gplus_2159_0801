@@ -1125,6 +1125,7 @@ void ap_setting_down_key_active(void)
 	}
 	else if(dv_set.dv_UI_flag == DV_MENU_MODE)
 	{
+
 		if(dv_set.menu_select_flag == 0)
 		{
 			dv_set.menu_select_count++;
@@ -2948,7 +2949,7 @@ void *Key_Thread(void *arg)
 	int key_press,key_release;//key press flag_keypress_edge,key realease !flag_keypress_edge
 	//system("insmod /system/lib/modules/common/Asensor_DA380.ko");
 	//sleep(1);
-	if(strcmp(SYSCONFIG_PLATFORM, "gplus.cvr_turnkey_demo2") == 0)//key_ESC=Poweroff,key_UP=ok .must fixed value
+	if(strcmp(SYSCONFIG_PLATFORM, "gplus.cvr_turnkey_demo0") == 0)//key_ESC=Poweroff,key_UP=ok .must fixed value
 	{
 		key_press = 0;
 		key_release = 1;
@@ -2985,11 +2986,10 @@ void *Key_Thread(void *arg)
 		//if( select(fd+1, &readfd, NULL, NULL, &timeout) > 0) { /*polling*/
 				if(FD_ISSET(fd, &readfd)) {
 					read(fd, &event, sizeof(struct input_event));
-				//	printf("read key key code=%d,key value=%d\n",event.code,event.value);
+					//printf("read key key code=%d,key value=%d\n",event.code,event.value);
 					if(dv_set.parking_mode_flag == 1)
 						dv_set.parking_mode_flag = 0;
 					gettimeofday(&powertime_s,NULL);
-
 					if(power_off == 2)
 					{
 						if((event.code == KEY_ESC)&&(event.value == 0))
@@ -3381,7 +3381,7 @@ int main(int argc,char **argv)
 		return -1;
 	}
 
-	Dsp_set_Vol(128);
+	Dsp_set_Vol(60);
 	
 	pthread_mutex_init(&key_mutex, NULL);
 	board_config_set_init(0x01);

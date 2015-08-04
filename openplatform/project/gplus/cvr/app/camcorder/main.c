@@ -191,8 +191,8 @@ int main(int argc, char *argv[])
 	
 	if((strcmp(SYSCONFIG_PLATFORM, "gplus.cvr_turnkey_demo0") == 0 )|| (	strcmp(SYSCONFIG_PLATFORM, "gplus.cvr_turnkey_demo2") == 0 ))
 	{
-		g_flip_on = 0;
-		g_flip_off = 1;
+		g_flip_on = 1;
+		g_flip_off = 0;
 	}
 	else
 	{
