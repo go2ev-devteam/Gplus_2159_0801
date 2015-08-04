@@ -41,6 +41,7 @@
 /**************************************************************************
  *                           C O N S T A N T S                            *
  **************************************************************************/
+#define RAW_MODE 0
 #define AR0330_MIPI_CLK_NO_STOP_EN		1
 
 #define AR0330_ID		0x20
@@ -108,7 +109,7 @@
 #define AR0330_60FPS_60HZ_MAX_EV_IDX			(AR0330_60FPS_60HZ_EXP_TIME_TOTAL - 5)
 
 
-#define AR0330_MIN_D_GAIN						(1.50)
+#define AR0330_MIN_D_GAIN						(1.65)
 
 
 
@@ -191,9 +192,12 @@ typedef struct sensor_dev_s
  static int current_frame_rate;
 
 static int *p_expTime_table;
-static int sensor_fps, sensor_total_ev, sensor_swith_time;
+static int sensor_fps, sensor_switch_time;
 static int pre_sensor_time, pre_sensor_a_gain, pre_sensor_d_gain;
 static int pre_sensor_time_b, pre_sensor_a_gain_b, pre_sensor_d_gain_b;
+#if RAW_MODE
+static int g_raw_mode_idx = -1;
+#endif
 static sensor_exposure_t 	seInfo;
 static sensor_dev_t	gAR0330Dev;
 #if (I2C_MODE == HW_I2C)
@@ -4489,7 +4493,11 @@ int ar0330_set_xfps_exposure_time(sensor_exposure_t *si)
 	if(si->sensor_ev_idx >= si->max_ev_idx) si->sensor_ev_idx = si->max_ev_idx;
 	if(si->sensor_ev_idx < 0) si->sensor_ev_idx = 0;
 
+#if RAW_MODE
+	idx = (g_raw_mode_idx < 0) ? si->sensor_ev_idx * 3 : g_raw_mode_idx * 3;
+#else	
 	idx = si->sensor_ev_idx * 3;
+#endif
 	si ->time = p_expTime_table[idx];
 	si ->analog_gain = p_expTime_table[idx+1];
 	si ->digital_gain = p_expTime_table[idx+2] >> 1;
@@ -4503,7 +4511,7 @@ int ar0330_set_xfps_exposure_time(sensor_exposure_t *si)
 	{
 		int fps;
 
-		if(si ->time >= sensor_swith_time)	fps = 25;
+		if(si ->time >= sensor_switch_time)	fps = 25;
 		else	fps = 30;
 		
 		if(current_frame_rate != fps)
@@ -4824,11 +4832,15 @@ AR0330_init(
 	seInfo.daylight_ev_idx= AR0330_30FPS_50HZ_DAY_EV_IDX;
 	seInfo.night_ev_idx= AR0330_30FPS_50HZ_NIGHT_EV_IDX;
 	seInfo.max_ev_idx = AR0330_30FPS_50HZ_MAX_EV_IDX;
+	seInfo.total_ev_idx = AR0330_30FPS_50HZ_EXP_TIME_TOTAL;
 	p_expTime_table = ar0330_30fps_exp_time_gain_50Hz;
 	sensor_fps = V4L2_TC_TYPE_30FPS;
-	sensor_total_ev = AR0330_30FPS_50HZ_EXP_TIME_TOTAL;
-	sensor_swith_time = 2000;
+	sensor_switch_time = 2000;
 	current_frame_rate= 30;
+#if RAW_MODE	
+	seInfo.raw_mode_idx = -1;
+	g_raw_mode_idx = -1;
+#endif
 		
 	pre_sensor_time = pre_sensor_a_gain = pre_sensor_d_gain = -1;
 	pre_sensor_time_b = pre_sensor_a_gain_b = pre_sensor_d_gain_b = -1;
@@ -5041,7 +5053,7 @@ AR0330_g_ctrl(
 		break;
 		
 	case V4L2_CID_BRIGHTNESS:
-		ctrl->value = 64 - (sensor_total_ev - seInfo.max_ev_idx);
+		ctrl->value = 64 - (seInfo.total_ev_idx - seInfo.max_ev_idx);
 		break;
 	default:
 		return -EINVAL;
@@ -5094,7 +5106,14 @@ AR0330_s_ctrl(
 			si = (sensor_exposure_t *) ctrl->value;
 			
 			seInfo.userISO = si->userISO;
-				
+
+#if RAW_MODE
+			if(si->raw_mode_idx > 0) {
+				printk("user set exp idx:%d\n", si->raw_mode_idx);
+				seInfo.raw_mode_idx = si->raw_mode_idx;
+				g_raw_mode_idx = seInfo.raw_mode_idx;
+			}
+#endif				
 			if(p_expTime_table != 0)
 			{
 				seInfo.ae_ev_idx = si->ae_ev_idx;
@@ -5115,7 +5134,7 @@ AR0330_s_ctrl(
 		{
 			enum v4l2_power_line_frequency line_freq;
 			line_freq = ctrl->value;
-			sensor_swith_time = 2000;
+			sensor_switch_time = 2000;
 			current_frame_rate= 30;
 			
 			if(sensor_fps == V4L2_TC_TYPE_30FPS)
@@ -5128,10 +5147,15 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_30FPS_50HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_30FPS_50HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_30FPS_50HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_30FPS_50HZ_EXP_TIME_TOTAL;
+
+					seInfo.max_ev_idx = AR0330_30FPS_50HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_30FPS_50HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_30FPS_50HZ_EXP_TIME_TOTAL;
+					//seInfo.max_ev_idx= AR0330_30FPS_50HZ_MAX_EV_IDX;
+					seInfo.total_ev_idx = AR0330_30FPS_50HZ_EXP_TIME_TOTAL;
 					
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
+
+					printk("50Hz @ 30fps\r\n");
 				}
 				else if(line_freq == V4L2_CID_POWER_LINE_FREQUENCY_60HZ)
 				{
@@ -5141,9 +5165,15 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_30FPS_60HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_30FPS_60HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_30FPS_50HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_30FPS_60HZ_EXP_TIME_TOTAL;
+
+					seInfo.max_ev_idx = AR0330_30FPS_60HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_30FPS_60HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_30FPS_60HZ_EXP_TIME_TOTAL;
+					
+					//seInfo.max_ev_idx= AR0330_30FPS_50HZ_MAX_EV_IDX;
+					seInfo.total_ev_idx = AR0330_30FPS_60HZ_EXP_TIME_TOTAL;
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
+
+					printk("60Hz @ 30fps\r\n");
 				}
 				else	
 					return -EINVAL;
@@ -5154,12 +5184,15 @@ AR0330_s_ctrl(
 					|| line_freq == V4L2_CID_POWER_LINE_FREQUENCY_50HZ)
 				{
 					p_expTime_table = ar0330_25fps_exp_time_gain_50Hz;		
-					sensor_swith_time = AR0330_25FPS_50HZ_SWITCH_TIME;
+					sensor_switch_time = AR0330_25FPS_50HZ_SWITCH_TIME;
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_25FPS_50HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_25FPS_50HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_25FPS_50HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_25FPS_50HZ_EXP_TIME_TOTAL;
+
+					seInfo.max_ev_idx = AR0330_25FPS_50HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_25FPS_50HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_25FPS_50HZ_EXP_TIME_TOTAL;
+					
+					seInfo.total_ev_idx = AR0330_25FPS_50HZ_EXP_TIME_TOTAL;
 
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
@@ -5167,20 +5200,21 @@ AR0330_s_ctrl(
 				else if(line_freq == V4L2_CID_POWER_LINE_FREQUENCY_60HZ)
 				{
 					p_expTime_table = ar0330_25fps_exp_time_gain_60Hz;
-					sensor_swith_time = AR0330_25FPS_60HZ_SWITCH_TIME;
+					sensor_switch_time = AR0330_25FPS_60HZ_SWITCH_TIME;
 					seInfo.sensor_ev_idx = AR0330_25FPS_60HZ_INIT_EV_IDX;
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_25FPS_60HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_25FPS_60HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_25FPS_60HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_25FPS_60HZ_EXP_TIME_TOTAL;
+					seInfo.max_ev_idx = AR0330_25FPS_60HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_25FPS_60HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_25FPS_60HZ_EXP_TIME_TOTAL;
+					seInfo.total_ev_idx = AR0330_25FPS_60HZ_EXP_TIME_TOTAL;
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
 				}
 				else
 					return -EINVAL;
 
-				printk("*******  set 25fps: sensor_swith_time = %d **********\r\n", sensor_swith_time);
+				printk("*******  set 25fps: sensor_switch_time = %d **********\r\n", sensor_switch_time);
 			}
 			else if(sensor_fps == V4L2_TC_TYPE_60FPS)
 			{
@@ -5192,8 +5226,10 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_60FPS_50HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_60FPS_50HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_60FPS_50HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_60FPS_50HZ_EXP_TIME_TOTAL;
+					//seInfo.max_ev_idx= AR0330_60FPS_50HZ_MAX_EV_IDX;
+					seInfo.max_ev_idx = AR0330_60FPS_50HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_60FPS_50HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_60FPS_50HZ_EXP_TIME_TOTAL;
+					seInfo.total_ev_idx = AR0330_60FPS_50HZ_EXP_TIME_TOTAL;
 
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
@@ -5206,8 +5242,10 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_60FPS_60HZ_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_60FPS_60HZ_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_60FPS_50HZ_MAX_EV_IDX;
-					sensor_total_ev = AR0330_60FPS_60HZ_EXP_TIME_TOTAL;
+					//seInfo.max_ev_idx= AR0330_60FPS_50HZ_MAX_EV_IDX;
+					seInfo.max_ev_idx = AR0330_60FPS_60HZ_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_60FPS_60HZ_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_60FPS_60HZ_EXP_TIME_TOTAL;
+					seInfo.total_ev_idx = AR0330_60FPS_60HZ_EXP_TIME_TOTAL;
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
 				}				
@@ -5225,8 +5263,10 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_25FPS_50HZ_LDW_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_25FPS_50HZ_LDW_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_25FPS_50HZ_LDW_MAX_EV_IDX;
-					sensor_total_ev = AR0330_25FPS_50HZ_LDW_EXP_TIME_TOTAL;
+					//seInfo.max_ev_idx= AR0330_25FPS_50HZ_LDW_MAX_EV_IDX;
+					seInfo.max_ev_idx = AR0330_25FPS_50HZ_LDW_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_25FPS_50HZ_LDW_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_25FPS_50HZ_LDW_EXP_TIME_TOTAL;
+					seInfo.total_ev_idx = AR0330_25FPS_50HZ_LDW_EXP_TIME_TOTAL;
 
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
@@ -5239,8 +5279,11 @@ AR0330_s_ctrl(
 					seInfo.ae_ev_idx = 0;
 					seInfo.daylight_ev_idx= AR0330_25FPS_60HZ_LDW_DAY_EV_IDX;
 					seInfo.night_ev_idx= AR0330_25FPS_60HZ_LDW_NIGHT_EV_IDX;
-					seInfo.max_ev_idx= AR0330_25FPS_50HZ_LDW_MAX_EV_IDX;
-					sensor_total_ev = AR0330_25FPS_60HZ_LDW_EXP_TIME_TOTAL;
+					//seInfo.max_ev_idx= AR0330_25FPS_50HZ_LDW_MAX_EV_IDX;
+					seInfo.max_ev_idx = AR0330_25FPS_60HZ_LDW_EXP_TIME_TOTAL - (seInfo.total_ev_idx - seInfo.max_ev_idx);
+					if(seInfo.max_ev_idx > AR0330_25FPS_60HZ_LDW_EXP_TIME_TOTAL) seInfo.max_ev_idx = AR0330_25FPS_60HZ_LDW_EXP_TIME_TOTAL;
+					
+					seInfo.total_ev_idx = AR0330_25FPS_60HZ_LDW_EXP_TIME_TOTAL;
 					if(seInfo.sensor_ev_idx > seInfo.max_ev_idx) seInfo.sensor_ev_idx = seInfo.max_ev_idx;
 					
 				}
@@ -5267,7 +5310,7 @@ AR0330_s_ctrl(
 		break;
 
 	case V4L2_CID_BRIGHTNESS:
-		seInfo.max_ev_idx = sensor_total_ev - (64 - ctrl->value);
+		seInfo.max_ev_idx = seInfo.total_ev_idx - (64 - ctrl->value);
 		break;
 
 	case V4L2_CID_AUTOGAIN:
@@ -5504,7 +5547,7 @@ AR0330_module_init(
 		void
 )
 {
-	if(sensor_i2c_open(AR0330_ID, 50) < 0) {
+	if(sensor_i2c_open(AR0330_ID, 100) < 0) {
 		printk(KERN_WARNING "i2cReqFail\n");
 		return -1;
 	}

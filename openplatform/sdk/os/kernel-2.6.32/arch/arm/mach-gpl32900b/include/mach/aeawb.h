@@ -19,11 +19,12 @@ typedef struct {
 	int daylight_ev_idx;	// daylight time
 	int night_ev_idx;		// night time
 	int max_ev_idx;
+	int total_ev_idx;
 
 	// ev index
 	int sensor_ev_idx;
 	int ae_ev_idx;
-	
+	int raw_mode_idx;	
 
 	int userISO;
 } sensor_exposure_t;

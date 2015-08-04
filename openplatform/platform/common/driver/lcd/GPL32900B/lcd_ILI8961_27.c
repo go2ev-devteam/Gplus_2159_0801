@@ -74,7 +74,7 @@ static const gp_disp_colormatrix_t gColorMatrix = {
 
 static panel_lcdInfo_t gPanelInfo = {
 	.name = "panel_lcd_ILI8961_27", // MUST equal module name
-	.workFreq    = 24000000,
+	.workFreq    = 27000000,//24000000,
 	.clkPolatiry = 0,
 	.resolution = {
 		.width  = 320,
@@ -277,7 +277,8 @@ static void init_disp_comond(void)
 	gp_gpio_set_output(data_pin,1,0);
 	gp_gpio_set_output(clk_pin,1,0);
 
-	sent_command(0x05,0x5f);
+#if 0
+/*	sent_command(0x05,0x5f);
 	read_command(0x05,&value);
 	sent_command(0x05,0x1f);
 	read_command(0x05,&value);
@@ -289,21 +290,61 @@ static void init_disp_comond(void)
 	read_command(0x00,&value);
 	sent_command(0x01,0x9f);
 	read_command(0x01,&value);
-	
-	//m-sent_command(0x03,0x60);
-	sent_command(0x03,0x2e);
+	sent_command(0x03,0x60);
 	read_command(0x03,&value);	
-	
-	//m-sent_command(0x0d,0x60);
-	sent_command(0x0d,0x50);
+	sent_command(0x0d,0x60);
 	read_command(0x0d,&value);	
-	
-	//m-sent_command(0x04,0x1b);
-	//sent_command(0x04,0x18);
 	sent_command(0x04,0x1b);
 	read_command(0x04,&value);
 	sent_command(0x16,0x04);
-	read_command(0x16,&value);
+	read_command(0x16,&value);*/
+#else
+
+	sent_command(0x05,0x1E);
+	
+	//{CMDDELAY_MS, 150},
+	
+	spi_delay(50);
+	
+	sent_command(0x05,0x5D); 
+	
+	//{CMDDELAY_MS, 150},
+	
+	spi_delay(50);
+	
+	//{0x00,0x07},
+	//{0x01,0x8c},//条纹代码
+	
+	sent_command(0x01,0x93); 
+	//sent_command(0x2f,0x61); 
+	//{0x03,0x2b},
+	sent_command(0x04,0x1f);// /8-bit RGB interface,如果不显示，或者显示不正常，可能是方案要匹配，
+	sent_command(0x00,0x0b); 
+	sent_command(0x0b,0x81); 
+	sent_command(0x06,0x15); //RGB格式，水平方向设置15
+	sent_command(0x07,0x32); //RGB格式，水平方向设置	32
+	//{0x0D,0x31},//tao,contrast 调整对比度
+	
+	sent_command(0x0D,0x53); //调整对比度
+	
+	sent_command(0x0E,0x3f);
+	sent_command(0x0F,0x3f);
+	sent_command(0x13,0x04);
+	sent_command(0x10,0x3f);
+	sent_command(0x11,0x3f);
+	sent_command(0x16,0x00); 
+	sent_command(0x17,0x77); 
+	sent_command(0x18,0x33); 
+	sent_command(0x19,0x00); 	
+	sent_command(0x1A,0x10); 
+	sent_command(0x95,0x80); 
+	sent_command(0xAF,0x04); 
+	sent_command(0xA5,0xA2); 
+	sent_command(0xA6,0x12); 
+	sent_command(0xA7,0x06);
+	sent_command(0x2B,0x01); 
+#endif
+
 	gp_gpio_release(cs_pin);
 	gp_gpio_release(data_pin);
 	gp_gpio_release(clk_pin);

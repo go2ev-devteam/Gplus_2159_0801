@@ -55,15 +55,21 @@
  *                           C O N S T A N T S                            *
  **************************************************************************/
 #define C_BUFFER_MAX		12
-#define C_DMA_CH			0			//0: auto switch, 1: use DMA A, 2: use DMA B
+//#define C_DMA_CH			0			//0: auto switch, 1: use DMA A, 2: use DMA B
+static int C_DMA_CH = 0;
 #define	NO_INPUT			0xFFFFFFFF
 #define USBPHY_CLK			96000000
 #define CDSP_CHK_MIPI_EN	0
 #define SKIP_CNT			3
 
-#define _SET_YUV_PATH_		1
-#define RAW_BIT				10
-#define RAW_MODE			0x01
+//#define _SET_YUV_PATH_		1
+//#define RAW_BIT				10
+//#define RAW_MODE			0x01
+static int _SET_YUV_PATH_ = 1;
+static int RAW_BIT = 10;
+static int RAW_MODE = 0x1;
+static int sensor_raw_idx = 0;
+
 
 #define CDSP_AE_CTRL_EN		0x01
 #define CDSP_AWB_CTRL_EN	0x02
@@ -207,6 +213,7 @@ static void sensor_set_exp_do_tasklet(unsigned long);
 //DECLARE_TASKLET(sensor_set_exp_tasklet, sensor_set_exp_do_tasklet, 0); 
 DECLARE_TASKLET_DISABLED(sensor_set_exp_tasklet, sensor_set_exp_do_tasklet, 0); 
 //static struct tasklet_struct *sensor_set_exp;
+static int tasklet_enable_flag = 0;
 
 
 /**************************************************************************
@@ -311,20 +318,20 @@ const unsigned char g_nd_edge_table[256] = // add by Comi , not strong edge
 
 static int uv_div[4][6] = 
 {
-/*	{ 4,  6,  8, 10, 12, 16},
-	{ 8, 14, 20, 26, 32, 38},
-	{12, 19, 26, 33, 40, 48},
-	{16, 24, 32, 40, 48, 56}	*/
+	{ 4,  6,  8, 10, 12, 12},
+	{ 8, 16, 24, 32, 40, 48},
+	{12, 24, 36, 48, 56, 64},
+	{16, 32, 48, 64, 80, 96}	
 	
  /*	{ 4,  8, 12, 16, 20, 24},
 	{ 8, 12, 16, 20, 24, 32},
 	{12, 16, 20, 24, 32, 40},
 	{16, 20, 24, 32, 40, 48}*/
-
+/*
 	{ 4,  8, 12, 16, 20, 24},
 	{16, 32, 48, 64, 80, 96},
 	{32, 64, 96, 128, 160, 192},
-	{64, 102, 140, 178, 216, 255}
+	{64, 102, 140, 178, 216, 255}*/
 
 };
 
@@ -1592,7 +1599,7 @@ static void gp_cdsp_sat_contrast_thr_init(int max_ev_idx, int night_ev_idx)
 		
 	// thr
 	thr0 = night_ev_idx;
-	thr3 = max_ev_idx - 8;
+	thr3 = max_ev_idx - 4;
 	step = (thr3 - thr0 + 1) /3;
 	if(step < 0 ) step = 0;
 
@@ -1626,13 +1633,12 @@ check_rqbuf_type(
 	void
 )
 {
-#if (C_DMA_CH == 0)
-	if(CdspDev->rbuf.count <= 2) {
-		DEBUG("too few buffers\n");
-		return -EINVAL;
-	}
-#endif
-	
+	if (C_DMA_CH == 0)
+		if(CdspDev->rbuf.count <= 2) {
+			DEBUG("too few buffers\n");
+			return -EINVAL;
+		}
+
 	if(CdspDev->rbuf.count >= C_BUFFER_MAX){
 		DEBUG("too many buffers\n");
 		return -EINVAL;
@@ -1771,25 +1777,28 @@ gpCdspPostProcess(
 	gpCdspSetFifoSize(PostPress->width);
 	
 	/* set interface */
-#if _SET_YUV_PATH_
-	switch(cdsp_inFmt)
+	if (_SET_YUV_PATH_)
 	{
-	case C_SDRAM_FMT_VY1UY0:
-	case C_SDRAM_FMT_RAW8:
-		gpHalCdspSetRawPath(0, 1, 1, 0); //yuyv out
-		break;
-	case C_SDRAM_FMT_RAW10:
-		gpHalCdspSetRawPath(0, 0, 1, 0); //yuyv out
-		break;
+		switch(cdsp_inFmt)
+		{
+		case C_SDRAM_FMT_VY1UY0:
+		case C_SDRAM_FMT_RAW8:
+			gpHalCdspSetRawPath(0, 1, 1, 0); //yuyv out
+			break;
+		case C_SDRAM_FMT_RAW10:
+			gpHalCdspSetRawPath(0, 0, 1, 0); //yuyv out
+			break;
+		}
 	}
-#else
-	if(RAW_BIT == 8)
-		gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
-	else if(RAW_BIT == 10)
-		gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
 	else
-		DERROR("Err: Please set bit of raw\r\n");
-#endif	
+	{
+		if(RAW_BIT == 8)
+			gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
+		else if(RAW_BIT == 10)
+			gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
+		else
+			DERROR("Err: Please set bit of raw\r\n");
+	}
 
 	gpHalFrontYuvOrderSet(0);
 		
@@ -2059,16 +2068,17 @@ gp_cdsp_s_fmt(
 		}
 
 		/* set interface */
-#if _SET_YUV_PATH_
-		gpHalCdspSetRawPath(0, 1, 1, 0); //yuyv out		
-#else
-		if(RAW_BIT == 8)
-			gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
-		else if(RAW_BIT == 10)
-			gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
+		if (_SET_YUV_PATH_)
+			gpHalCdspSetRawPath(0, 1, 1, 0); //yuyv out
 		else
-			DERROR("Err: Please set bit of raw\r\n");
-#endif
+		{
+			if(RAW_BIT == 8)
+				gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
+			else if(RAW_BIT == 10)
+				gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
+			else
+				DERROR("Err: Please set bit of raw\r\n");
+		}
 
 		if(cdsp_inFmt == C_FRONT_FMT_UY1VY0) {
 			gpHalFrontYuvOrderSet(0);
@@ -2158,16 +2168,17 @@ gp_cdsp_s_fmt(
 		}	
 
 		/* set interface */	
-#if _SET_YUV_PATH_
-		gpHalCdspSetRawPath(0, 0, 1, 0); //yuyv out		
-#else
-		if(RAW_BIT == 8)
-			gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
-		else if(RAW_BIT == 10)
-			gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
+		if (_SET_YUV_PATH_)
+			gpHalCdspSetRawPath(0, 0, 1, 0); //yuyv out		
 		else
-			DERROR("Err: Please set bit of raw\r\n");
-#endif		
+		{
+			if(RAW_BIT == 8)
+				gpHalCdspSetRawPath(1, 1, 1, 0); //8bit raw out in 8-bit format
+			else if(RAW_BIT == 10)
+				gpHalCdspSetRawPath(RAW_MODE, 0, 1, 0); // packed 10bit raw out 
+			else
+				DERROR("Err: Please set bit of raw\r\n");
+		}
 
 		gpHalFrontYuvOrderSet(0);
 		
@@ -2482,7 +2493,31 @@ gp_cdsp_g_ctrl(
 			nRet = copy_to_user((void __user*)ctrl->value, (void*)&CdspDev->result, sizeof(CdspDev->result));
 			break;
 		}
-
+		case MSG_CDSP_WB_MODE:
+		{
+			unsigned char *awb = CdspDev->awb_workmem;
+			int lum = gp_cdsp_ae_get_result_lum(CdspDev->ae_workmem);
+			int awbmode  = 0;
+			int targetY_low = (int)(CdspDev->ae_target_night * 0.7);
+			if(lum > targetY_low) {
+				awbmode = 0;
+			}
+			else {
+				awbmode = 2;
+			}
+			//awbmode = gp_cdsp_awb_get_mode(awb);
+			nRet = copy_to_user((void __user*)ctrl->value, (void*)&awbmode, sizeof(int));
+			if(nRet < 0) {
+				RETURN(-EINVAL);
+			}
+			break;
+		}		
+		case MSG_CDSP_SENSOR_EXP_IDX:
+		{
+			nRet = copy_to_user((void __user*)ctrl->value, (void*)&sensor_raw_idx, sizeof(sensor_raw_idx));
+			break;
+		}
+		
 		default:
 		{
 			struct v4l2_subdev *sd;
@@ -3189,7 +3224,69 @@ gp_cdsp_s_ctrl(
 				CdspDev->sensor_status = CMS_I2C_TIMEOUT;
 			}
 			
+			sensor_raw_idx = seinfo->sensor_ev_idx; //deyue add			
+			break;
+		}
+		case MSG_CDSP_RAW_MODE:
+		{
+
+			_SET_YUV_PATH_ = 0; //0: raw //deyue
+			C_DMA_CH = 1;
+#if 0
+			struct v4l2_subdev *sd2;
+			struct v4l2_control csi_ctrl2;
+			sensor_exposure_t *seinfo2;
+
+			sd2 = CdspDev->sd;
+			csi_ctrl2.id = V4L2_CID_EXPOSURE;
 			
+			
+			nRet = sd2->ops->core->g_ctrl(sd2, &csi_ctrl2);
+			if(nRet < 0) {
+				CdspDev->sensor_status = CMS_I2C_TIMEOUT;
+			}
+
+			seinfo2 = (sensor_exposure_t *) csi_ctrl2.value;
+
+			copy_from_user((void*)&seinfo2->raw_mode_idx, (void __user*)ctrl->value, sizeof(int));
+
+			csi_ctrl2.value = (int) seinfo2;
+			nRet = sd2->ops->core->s_ctrl(sd2, &csi_ctrl2);
+			if(nRet < 0) {
+				CdspDev->sensor_status = CMS_I2C_TIMEOUT;
+			}
+#endif
+			break;
+		}
+		case MSG_CDSP_SENSOR_EXP_IDX:
+		{
+			struct v4l2_subdev *sd2;
+			struct v4l2_control csi_ctrl2;
+			sensor_exposure_t *seinfo2;
+
+#if 1
+			sd2 = CdspDev->sd;
+			csi_ctrl2.id = V4L2_CID_EXPOSURE;
+			
+			
+			nRet = sd2->ops->core->g_ctrl(sd2, &csi_ctrl2);
+			if(nRet < 0) {
+				CdspDev->sensor_status = CMS_I2C_TIMEOUT;
+			}
+
+			seinfo2 = (sensor_exposure_t *) csi_ctrl2.value;
+
+			copy_from_user((void*)&seinfo2->raw_mode_idx, (void __user*)ctrl->value, sizeof(int));
+			printk("=======deyue set raw mode idx %d======\n", seinfo2->raw_mode_idx);
+			CdspDev->sensor_ev_idx = seinfo2->raw_mode_idx;
+			sensor_raw_idx = seinfo2->raw_mode_idx;
+
+			csi_ctrl2.value = (int) seinfo2;
+			nRet = sd2->ops->core->s_ctrl(sd2, &csi_ctrl2);
+			if(nRet < 0) {
+				CdspDev->sensor_status = CMS_I2C_TIMEOUT;
+			}
+#endif
 			break;
 		}
 
@@ -3276,26 +3373,34 @@ gp_cdsp_s_capture(
 
 	/* 2.change to capture */
 	addr = (unsigned int)gp_user_va_to_pa((unsigned short *)pCap->buffaddr);	
-#if (C_DMA_CH == 1) || (C_DMA_CH == 2)
-#if _SET_YUV_PATH_
-#if (C_DMA_CH == 1)
-	gpHalCdspSetYuvBuffA(pCap->width, pCap->height, addr);
-	gpHalCdspSetDmaBuff(RD_A_WR_A);
-#else
-	gpHalCdspSetYuvBuffB(pCap->width, pCap->height, addr);
-	gpHalCdspSetDmaBuff(RD_B_WR_B);
-#endif
-#else
-	gpHalCdspSetRawBuff(addr);
-	gpHalCdspSetRawBuffSize(pCap->width, pCap->height, 0, RAW_BIT);
-	gpHalCdspSetReadBackSize(0, 0, pCap->width, pCap->height);
-#endif
-
-#else
-	gpHalCdspSetYuvBuffA(pCap->width, pCap->height, addr);
-	gpHalCdspSetYuvBuffB(pCap->width, pCap->height, addr);
-	gpHalCdspSetDmaBuff(AUTO_SWITCH);
-#endif
+	if ((C_DMA_CH == 1) || (C_DMA_CH == 2))
+	{
+		if (_SET_YUV_PATH_)
+		{
+			if (C_DMA_CH == 1)
+			{
+				gpHalCdspSetYuvBuffA(pCap->width, pCap->height, addr);
+				gpHalCdspSetDmaBuff(RD_A_WR_A);
+			}
+			else
+			{
+				gpHalCdspSetYuvBuffB(pCap->width, pCap->height, addr);
+				gpHalCdspSetDmaBuff(RD_B_WR_B);
+			}
+		}
+		else
+		{
+			gpHalCdspSetRawBuff(addr);
+			gpHalCdspSetRawBuffSize(pCap->width, pCap->height, 0, RAW_BIT);
+			gpHalCdspSetReadBackSize(0, 0, pCap->width, pCap->height);
+		}
+	}
+	else
+	{
+		gpHalCdspSetYuvBuffA(pCap->width, pCap->height, addr);
+		gpHalCdspSetYuvBuffB(pCap->width, pCap->height, addr);
+		gpHalCdspSetDmaBuff(AUTO_SWITCH);
+	}
 	
 	fmt.fmt.pix.width = pCap->width;
 	fmt.fmt.pix.height = pCap->height;
@@ -3338,29 +3443,37 @@ gp_cdsp_s_capture(
 	gpHalCdspDataSource(C_CDSP_SDRAM);
 	CdspDev->cdsp_feint_flag = 0;
 
-#if (C_DMA_CH == 1) || (C_DMA_CH == 2)	
-#if _SET_YUV_PATH_
-#if C_DMA_CH == 1
-	gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
-	gpHalCdspSetDmaBuff(RD_A_WR_A);
-#else
-	gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
-	gpHalCdspSetDmaBuff(RD_B_WR_B);
-#endif
-#else
-	gpHalCdspSetRawBuff(CdspDev->bfaddr[CdspDev->in_que[0]]);
-	gpHalCdspSetRawBuffSize(CdspDev->imgRbWidth, CdspDev->imgRbHeight, 0, RAW_BIT);
-	gpHalCdspSetReadBackSize(0, 0, CdspDev->imgRbWidth, CdspDev->imgRbHeight);
-#endif
-
-#else 
-	CdspDev->abBufFlag = 0;
-	CdspDev->aInQueIdx = CdspDev->in_que[0];
-	CdspDev->bInQueIdx = CdspDev->in_que[1];
-	gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
-	gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[1]]);
-	gpHalCdspSetDmaBuff(AUTO_SWITCH);
-#endif
+	if ((C_DMA_CH == 1) || (C_DMA_CH == 2)	)
+	{
+		if (_SET_YUV_PATH_)
+		{
+			if( C_DMA_CH == 1)
+			{
+				gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
+				gpHalCdspSetDmaBuff(RD_A_WR_A);
+			}
+			else
+			{
+				gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
+				gpHalCdspSetDmaBuff(RD_B_WR_B);
+			}
+		}
+		else
+		{
+			gpHalCdspSetRawBuff(CdspDev->bfaddr[CdspDev->in_que[0]]);
+			gpHalCdspSetRawBuffSize(CdspDev->imgRbWidth, CdspDev->imgRbHeight, 0, RAW_BIT);
+			gpHalCdspSetReadBackSize(0, 0, CdspDev->imgRbWidth, CdspDev->imgRbHeight);
+		}
+	}
+	else
+	{
+		CdspDev->abBufFlag = 0;
+		CdspDev->aInQueIdx = CdspDev->in_que[0];
+		CdspDev->bInQueIdx = CdspDev->in_que[1];
+		gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
+		gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[1]]);
+		gpHalCdspSetDmaBuff(AUTO_SWITCH);
+	}
 
 	if(gp_cdsp_s_fmt(&bkfmt) < 0) {
 		DEBUG("resume gp_cdsp_s_fmt Err\n");
@@ -3897,6 +4010,7 @@ gp_cdsp_ioctl(
 
 				// enable sensor set exp tasklet
 				tasklet_enable(&sensor_set_exp_tasklet);
+				tasklet_enable_flag = 1;
 
 				//ytliao 2014.05 wake up awb task here
 				if(down_interruptible(&CdspDev->aeawb_sem) != 0) return -ERESTARTSYS;
@@ -3921,45 +4035,53 @@ gp_cdsp_ioctl(
 					CdspDev->ae_awb_task = NULL;
 				}
 				
-			#if (C_DMA_CH == 1) || (C_DMA_CH == 2)
-			#if _SET_YUV_PATH_
-			#if (C_DMA_CH == 1)
-				//CdspDev->aInQueIdx = CdspDev->in_que[0];
-				//CdspDev->bInQueIdx = CdspDev->in_que[1];
-				//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->aInQueIdx]), 0x55, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);
-				//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->bInQueIdx]), 0xAA, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);
-				gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
-				gpHalCdspSetDmaBuff(RD_A_WR_A);
-			#else
-				gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
-				gpHalCdspSetDmaBuff(RD_B_WR_B);
-			#endif
-			#else
-				gpHalCdspSetRawBuff(CdspDev->bfaddr[CdspDev->in_que[0]]);
-				gpHalCdspSetRawBuffSize(CdspDev->imgRbWidth, CdspDev->imgRbHeight, 0, RAW_BIT);
-				gpHalCdspSetReadBackSize(0, 0, CdspDev->imgRbWidth, CdspDev->imgRbHeight);
-			#endif
-				gpHalCdspClrIntStatus(CDSP_INT_ALL);
-				gpHalCdspSetIntEn(ENABLE, CDSP_EOF);
-				gpHalCdspDataSource(CdspDev->imgSrc);
-			
-			#else
-				/* dma auto switch mode */
-				if((CdspDev->aInQueIdx == 0) && (CdspDev->bInQueIdx == 0)) {
-					CdspDev->abBufFlag = 0;
-					CdspDev->aInQueIdx = CdspDev->in_que[0];
-					CdspDev->bInQueIdx = CdspDev->in_que[1];
-					//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->aInQueIdx]), 0x55, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);					
-					//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->bInQueIdx]), 0xAA, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);					
-					gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->aInQueIdx]);
-					gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->bInQueIdx]);
-					gpHalCdspSetDmaBuff(AUTO_SWITCH);
-
+				if ((C_DMA_CH == 1) || (C_DMA_CH == 2))
+				{
+					if (_SET_YUV_PATH_)
+					{
+						if (C_DMA_CH == 1)
+						{
+							//CdspDev->aInQueIdx = CdspDev->in_que[0];
+							//CdspDev->bInQueIdx = CdspDev->in_que[1];
+							//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->aInQueIdx]), 0x55, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);
+							//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->bInQueIdx]), 0xAA, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);
+							gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
+							gpHalCdspSetDmaBuff(RD_A_WR_A);
+						}
+						else
+						{
+							gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->in_que[0]]);
+							gpHalCdspSetDmaBuff(RD_B_WR_B);
+						}
+					}
+					else
+					{
+						gpHalCdspSetRawBuff(CdspDev->bfaddr[CdspDev->in_que[0]]);
+						gpHalCdspSetRawBuffSize(CdspDev->imgRbWidth, CdspDev->imgRbHeight, 0, RAW_BIT);
+						gpHalCdspSetReadBackSize(0, 0, CdspDev->imgRbWidth, CdspDev->imgRbHeight);
+					}
 					gpHalCdspClrIntStatus(CDSP_INT_ALL);
-					gpHalCdspSetIntEn(ENABLE, CDSP_OVERFOLW|CDSP_EOF);
+					gpHalCdspSetIntEn(ENABLE, CDSP_EOF);
 					gpHalCdspDataSource(CdspDev->imgSrc);
 				}
-			#endif
+				else
+				{
+					/* dma auto switch mode */
+					if((CdspDev->aInQueIdx == 0) && (CdspDev->bInQueIdx == 0)) {
+						CdspDev->abBufFlag = 0;
+						CdspDev->aInQueIdx = CdspDev->in_que[0];
+						CdspDev->bInQueIdx = CdspDev->in_que[1];
+						//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->aInQueIdx]), 0x55, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);					
+						//memset((void *)gp_chunk_va(CdspDev->bfaddr[CdspDev->bInQueIdx]), 0xAA, CdspDev->imgRbWidth*CdspDev->imgRbHeight*2);					
+						gpHalCdspSetYuvBuffA(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->aInQueIdx]);
+						gpHalCdspSetYuvBuffB(CdspDev->imgRbWidth, CdspDev->imgRbHeight, CdspDev->bfaddr[CdspDev->bInQueIdx]);
+						gpHalCdspSetDmaBuff(AUTO_SWITCH);
+                	
+						gpHalCdspClrIntStatus(CDSP_INT_ALL);
+						gpHalCdspSetIntEn(ENABLE, CDSP_OVERFOLW|CDSP_EOF);
+						gpHalCdspDataSource(CdspDev->imgSrc);
+					}
+				}
 
 				gpHalFrontIntCfg(0x120, 0, 0, 128); // enable VD INT
 				
@@ -4001,19 +4123,23 @@ gp_cdsp_ioctl(
 
 			// disable sensor set exp tasklet
 			tasklet_disable(&sensor_set_exp_tasklet);
+			tasklet_enable_flag = 0;
 
 			/* disable 3A and IRQ */
 			gpHalCdspSetAWBEn(DISABLE, DISABLE);
 			gpHalCdspSetAEEn(DISABLE, DISABLE);
 			gpHalCdspSetAFEn(DISABLE, DISABLE);	
-		#if (C_DMA_CH == 1) || (C_DMA_CH == 2)
-			gpHalCdspSetIntEn(DISABLE, CDSP_INT_ALL);
-			gpHalCdspClrIntStatus(CDSP_INT_ALL);
-		#else
-			gpHalCdspSetIntEn(DISABLE, CDSP_AFWIN_UPDATE|CDSP_AWBWIN_UPDATE|CDSP_AEWIN_SEND);
-			//gpHalCdspSetIntEn(DISABLE, CDSP_OVERFOLW | CDSP_EOF);
-			//gpHalCdspClrIntStatus(CDSP_INT_ALL);
-		#endif
+			if ((C_DMA_CH == 1) || (C_DMA_CH == 2))
+			{
+				gpHalCdspSetIntEn(DISABLE, CDSP_INT_ALL);
+				gpHalCdspClrIntStatus(CDSP_INT_ALL);
+			}
+			else
+			{
+				gpHalCdspSetIntEn(DISABLE, CDSP_AFWIN_UPDATE|CDSP_AWBWIN_UPDATE|CDSP_AEWIN_SEND);
+				//gpHalCdspSetIntEn(DISABLE, CDSP_OVERFOLW | CDSP_EOF);
+				//gpHalCdspClrIntStatus(CDSP_INT_ALL);
+			}
 
 			/* clear variable */
 			//CdspDev->cdsp_feint_flag = 0;
@@ -4497,145 +4623,148 @@ gp_cdsp_handle_eof(
 	}
  	
 /* USE DMA A or B, real time switch buffer at EOF */
-#if (C_DMA_CH == 1) || (C_DMA_CH == 2)	
+	if ((C_DMA_CH == 1) || (C_DMA_CH == 2)	)
+	{
 #if CDSP_CHK_MIPI_EN == 1
-	if(strcmp("MIPI", pDev->port) == 0) {
-		if(gp_mipi_get_curframe_status() == 0) {
-			DERROR("MIPIFrameFail\n");
-			return 0;
+		if(strcmp("MIPI", pDev->port) == 0) {
+			if(gp_mipi_get_curframe_status() == 0) {
+				DERROR("MIPIFrameFail\n");
+				return 0;
+			}
 		}
-	}
 #endif 
-
-	/* find empty frame */
-	EmptyIdx = pDev->in_que[1];
-	if(EmptyIdx == 0xFF) {
-		DERROR("cdsp: no empty buffer, skip frame\n");
-		return 0; 
-	}
-	
-	/* set empty buffer to h/w */
-#if _SET_YUV_PATH_
-#if (C_DMA_CH == 1)
-	gpHalCdspSetYuvBuffA(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
-#else
-	gpHalCdspSetYuvBuffB(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
-#endif
-#else
-	gpHalCdspSetRawBuff(pDev->bfaddr[EmptyIdx]);
-	gpHalCdspSetRawBuffSize(pDev->imgRbWidth, pDev->imgRbHeight, 0, RAW_BIT);
-	gpHalCdspSetReadBackSize(0, 0, pDev->imgRbWidth, pDev->imgRbHeight);
-#endif
-	//DEBUG("Img: buf = 0x%x, w = %d, h = %d\n", CdspDev->bfaddr[EmptyIdx], CdspDev->imgRbWidth, CdspDev->imgRbHeight);
-
-	/* get/set ready buffer */
-	ReadyIdx = pDev->in_que[0];
-	pDev->bf[ReadyIdx].bytesused = (pDev->imgRbWidth*pDev->imgRbHeight)<<1;
-	pDev->bf[ReadyIdx].flags = V4L2_BUF_FLAG_DONE;
-	do_gettimeofday(&pDev->bf[ReadyIdx].timestamp);
-	pDev->bf[ReadyIdx].sequence = pDev->TotalCnt++;
-	pDev->bf[ReadyIdx].input = FRAME_SET;
-	
-	/* push the ready index into out_que buffer */
-	for(i=0; i<C_BUFFER_MAX; i++) {
-		if(pDev->out_que[i] == ReadyIdx) {
-			DERROR("cdsp: out_que error\n");
+		/* find empty frame */
+		EmptyIdx = pDev->in_que[1];
+		if(EmptyIdx == 0xFF) {
+			DERROR("cdsp: no empty buffer, skip frame\n");
+			return 0; 
+		}
+		
+		/* set empty buffer to h/w */
+		if (_SET_YUV_PATH_)
+		{
+			if (C_DMA_CH == 1)
+				gpHalCdspSetYuvBuffA(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
+			else
+				gpHalCdspSetYuvBuffB(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
+		}
+		else
+		{
+			gpHalCdspSetRawBuff(pDev->bfaddr[EmptyIdx]);
+			gpHalCdspSetRawBuffSize(pDev->imgRbWidth, pDev->imgRbHeight, 0, RAW_BIT);
+			gpHalCdspSetReadBackSize(0, 0, pDev->imgRbWidth, pDev->imgRbHeight);
+		}
+		//DEBUG("Img: buf = 0x%x, w = %d, h = %d\n", CdspDev->bfaddr[EmptyIdx], CdspDev->imgRbWidth, CdspDev->imgRbHeight);
+    	
+		/* get/set ready buffer */
+		ReadyIdx = pDev->in_que[0];
+		pDev->bf[ReadyIdx].bytesused = (pDev->imgRbWidth*pDev->imgRbHeight)<<1;
+		pDev->bf[ReadyIdx].flags = V4L2_BUF_FLAG_DONE;
+		do_gettimeofday(&pDev->bf[ReadyIdx].timestamp);
+		pDev->bf[ReadyIdx].sequence = pDev->TotalCnt++;
+		pDev->bf[ReadyIdx].input = FRAME_SET;
+		
+		/* push the ready index into out_que buffer */
+		for(i=0; i<C_BUFFER_MAX; i++) {
+			if(pDev->out_que[i] == ReadyIdx) {
+				DERROR("cdsp: out_que error\n");
+				return 0;
+			}
+			
+			if(pDev->out_que[i] == 0xFF) {
+				pDev->out_que[i] = ReadyIdx;
+				break;
+			}
+		}
+		
+		if(i == C_BUFFER_MAX) {
+			DERROR("cdsp: out_que not find\n");
 			return 0;
 		}
 		
-		if(pDev->out_que[i] == 0xFF) {
-			pDev->out_que[i] = ReadyIdx;
-			break;
+		/* shift the in_que buffer */
+		for(i=0; i<(C_BUFFER_MAX-1); i++) {
+			pDev->in_que[i] = pDev->in_que[i+1];
 		}
+		
+		pDev->in_que[C_BUFFER_MAX-1] = 0xFF;
 	}
-	
-	if(i == C_BUFFER_MAX) {
-		DERROR("cdsp: out_que not find\n");
-		return 0;
-	}
-	
-	/* shift the in_que buffer */
-	for(i=0; i<(C_BUFFER_MAX-1); i++) {
-		pDev->in_que[i] = pDev->in_que[i+1];
-	}
-	
-	pDev->in_que[C_BUFFER_MAX-1] = 0xFF;
-
-#else
-/* USE DMA auto switch, ready buffer sequence is BABABA... */
+	else
+	{
+	/* USE DMA auto switch, ready buffer sequence is BABABA... */
 #if CDSP_CHK_MIPI_EN == 1
-	if(strcmp("MIPI", pDev->port) == 0) {
-		if(gp_mipi_get_curframe_status() == 0) {
-			DERROR("MIPIFrameFail\n");
-			return 0;
+		if(strcmp("MIPI", pDev->port) == 0) {
+			if(gp_mipi_get_curframe_status() == 0) {
+				DERROR("MIPIFrameFail\n");
+				return 0;
+			}
 		}
-	}
 #endif 
+		
+		/* find empty frame */
+		EmptyIdx = pDev->in_que[2];
+		if(EmptyIdx == 0xFF) {
+			DERROR("cdsp: no empty buffer, skip frame\n");
+			return 0; 
+		}
 	
-	/* find empty frame */
-	EmptyIdx = pDev->in_que[2];
-	if(EmptyIdx == 0xFF) {
-		DERROR("cdsp: no empty buffer, skip frame\n");
-		return 0; 
-	}
-
-	if(pDev->abBufFlag) {
-		gpHalCdspSetYuvBuffA(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
-		ReadyIdx = pDev->aInQueIdx;
-		pDev->aInQueIdx = EmptyIdx;
-	} else {
-		gpHalCdspSetYuvBuffB(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
-		ReadyIdx = pDev->bInQueIdx;
-		pDev->bInQueIdx = EmptyIdx;	
-	}
-
-	/* set ready buffer */
-	//DEBUG("rdy:%d\n", ReadyIdx);
-	pDev->bf[ReadyIdx].bytesused = (pDev->imgRbWidth*pDev->imgRbHeight)<<1;
-	pDev->bf[ReadyIdx].flags = V4L2_BUF_FLAG_DONE;
-	do_gettimeofday(&pDev->bf[ReadyIdx].timestamp);
-	pDev->bf[ReadyIdx].sequence = pDev->TotalCnt++;
-	pDev->bf[ReadyIdx].input = FRAME_SET;
+		if(pDev->abBufFlag) {
+			gpHalCdspSetYuvBuffA(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
+			ReadyIdx = pDev->aInQueIdx;
+			pDev->aInQueIdx = EmptyIdx;
+		} else {
+			gpHalCdspSetYuvBuffB(pDev->imgRbWidth, pDev->imgRbHeight, pDev->bfaddr[EmptyIdx]);
+			ReadyIdx = pDev->bInQueIdx;
+			pDev->bInQueIdx = EmptyIdx;	
+		}
 	
-	/* push the ready index into out_que buffer */
-	for(i=0; i<C_BUFFER_MAX; i++) {
-		if(pDev->out_que[i] == ReadyIdx) {
-			DERROR("cdsp: find out_que error\n");
+		/* set ready buffer */
+		//DEBUG("rdy:%d\n", ReadyIdx);
+		pDev->bf[ReadyIdx].bytesused = (pDev->imgRbWidth*pDev->imgRbHeight)<<1;
+		pDev->bf[ReadyIdx].flags = V4L2_BUF_FLAG_DONE;
+		do_gettimeofday(&pDev->bf[ReadyIdx].timestamp);
+		pDev->bf[ReadyIdx].sequence = pDev->TotalCnt++;
+		pDev->bf[ReadyIdx].input = FRAME_SET;
+		
+		/* push the ready index into out_que buffer */
+		for(i=0; i<C_BUFFER_MAX; i++) {
+			if(pDev->out_que[i] == ReadyIdx) {
+				DERROR("cdsp: find out_que error\n");
+				return 0;
+			}
+			
+			if(pDev->out_que[i] == 0xFF) {
+				pDev->out_que[i] = ReadyIdx;
+				break;
+			}
+		}
+		
+		if(i == C_BUFFER_MAX) {
+			DERROR("cdsp: out_que not find\n");
 			return 0;
 		}
 		
-		if(pDev->out_que[i] == 0xFF) {
-			pDev->out_que[i] = ReadyIdx;
-			break;
+		/* shift the in_que buffer */
+		//DEBUG("inn:%d, %d, %d, %d, %d\n", pDev->in_que[0], pDev->in_que[1], pDev->in_que[2], pDev->in_que[3], pDev->in_que[4]);
+		for(i=0; i<C_BUFFER_MAX; i++) {
+			if(pDev->in_que[i] == ReadyIdx) {
+				break;
+			}
 		}
-	}
 	
-	if(i == C_BUFFER_MAX) {
-		DERROR("cdsp: out_que not find\n");
-		return 0;
-	}
-	
-	/* shift the in_que buffer */
-	//DEBUG("inn:%d, %d, %d, %d, %d\n", pDev->in_que[0], pDev->in_que[1], pDev->in_que[2], pDev->in_que[3], pDev->in_que[4]);
-	for(i=0; i<C_BUFFER_MAX; i++) {
-		if(pDev->in_que[i] == ReadyIdx) {
-			break;
+		if(i == C_BUFFER_MAX) {
+			DERROR("cdsp: find in_que error\n");
+			return 0;
 		}
+	
+		for(; i<(C_BUFFER_MAX-1); i++) {
+			pDev->in_que[i] = pDev->in_que[i+1];
+		}
+	
+		pDev->in_que[C_BUFFER_MAX-1] = 0xFF;
+		//DEBUG("ins:%d, %d, %d, %d, %d\n", pDev->in_que[0], pDev->in_que[1], pDev->in_que[2], pDev->in_que[3], pDev->in_que[4]);
+		//DEBUG("out:%d, %d, %d, %d, %d\n", pDev->out_que[0], pDev->out_que[1], pDev->out_que[2], pDev->out_que[3], pDev->out_que[4]);
 	}
-
-	if(i == C_BUFFER_MAX) {
-		DERROR("cdsp: find in_que error\n");
-		return 0;
-	}
-
-	for(; i<(C_BUFFER_MAX-1); i++) {
-		pDev->in_que[i] = pDev->in_que[i+1];
-	}
-
-	pDev->in_que[C_BUFFER_MAX-1] = 0xFF;
-	//DEBUG("ins:%d, %d, %d, %d, %d\n", pDev->in_que[0], pDev->in_que[1], pDev->in_que[2], pDev->in_que[3], pDev->in_que[4]);
-	//DEBUG("out:%d, %d, %d, %d, %d\n", pDev->out_que[0], pDev->out_que[1], pDev->out_que[2], pDev->out_que[3], pDev->out_que[4]);
-#endif
 
 	/* wake up poll */
 	pDev->cdsp_eof_cnt++;
@@ -4839,7 +4968,7 @@ static void sensor_set_exp_do_tasklet(unsigned long para)
 }
 
 
-void show_ae_win(unsigned char *ae_win)
+static void show_ae_win(unsigned char *ae_win)
 {
 	int i;
 
@@ -4852,6 +4981,37 @@ void show_ae_win(unsigned char *ae_win)
 	printk("\r\n");
 }
 
+
+static void gp_awb_first_search(unsigned char *awb)
+{
+	awb_uv_thr_t UVthr;
+	gpCdspWbGain2_t wb_gain2;
+	
+	wb_gain2.wbgain2en = ENABLE;
+	wb_gain2.rgain2 = 64;
+	wb_gain2.bgain2 = 64;
+	wb_gain2.ggain2 = 64;			
+	gpCdspSetWBGain2(&wb_gain2);
+
+	UVthr.UL1N1 = CdspDev->sensor_cdsp.awb_thr[19];
+	UVthr.UL1P1 = CdspDev->sensor_cdsp.awb_thr[20];
+	UVthr.VL1N1	= CdspDev->sensor_cdsp.awb_thr[21];
+	UVthr.VL1P1 = CdspDev->sensor_cdsp.awb_thr[22];
+
+	UVthr.UL1N2 = CdspDev->sensor_cdsp.awb_thr[23];
+	UVthr.UL1P2 = CdspDev->sensor_cdsp.awb_thr[24];
+	UVthr.VL1N2	= CdspDev->sensor_cdsp.awb_thr[25];
+	UVthr.VL1P2 = CdspDev->sensor_cdsp.awb_thr[26];
+
+	UVthr.UL1N3 = CdspDev->sensor_cdsp.awb_thr[27];
+	UVthr.UL1P3 = CdspDev->sensor_cdsp.awb_thr[28];
+	UVthr.VL1N3	= CdspDev->sensor_cdsp.awb_thr[29];
+	UVthr.VL1P3 = CdspDev->sensor_cdsp.awb_thr[30];
+	gpHalCdspSetAwbUVThr(&UVthr);
+
+	gp_cdsp_awb_set_mode(awb, AWB_AUTO_FIRST_SEARCH);
+	//printk("AWB_AUTO_FIRST_SEARCH\r\n");
+}
 
 static int gp_ae_awb_process(void *arg)
 {
@@ -4866,6 +5026,7 @@ static int gp_ae_awb_process(void *arg)
 	int low_lum_switch_cnt, high_lum_switch_cnt;
 	gpCdspCorMatrix_t mtx1, mtx2;
 	int awb_low_lum_cnt, targetY_low;
+	int awb_fail_cnt;
 	int pre_awb_ct;
 	int ae_frame_thr, awb_frame_thr;
 	int awb_init_search;
@@ -4936,6 +5097,8 @@ static int gp_ae_awb_process(void *arg)
 	CdspDev->sensor_time_thr = 0x100;
 	if(CdspDev->getSensorInfo == 0x21)
 	{
+		int max_ev_idx;
+		
 		csi_ctrl.id = V4L2_CID_EXPOSURE;
 		sd = CdspDev->sd;
 		ret = sd->ops->core->g_ctrl(sd, &csi_ctrl);
@@ -4962,7 +5125,10 @@ static int gp_ae_awb_process(void *arg)
 		gp_cdsp_ae_set_sensor_exp_time(CdspDev->ae_workmem, p_seInfo);
 
 		CdspDev->sat_contr_idx = 0;
-		gp_cdsp_sat_contrast_thr_init(p_seInfo->max_ev_idx, p_seInfo->night_ev_idx);
+
+		max_ev_idx = p_seInfo->max_ev_idx;
+		if(max_ev_idx < (p_seInfo->total_ev_idx - 25)) max_ev_idx = (p_seInfo->total_ev_idx - 25);
+		gp_cdsp_sat_contrast_thr_init(max_ev_idx, p_seInfo->night_ev_idx);
 	}
 	memcpy(&CdspDev->sInfo, &seInfo, sizeof(sensor_exposure_t));
 	
@@ -4984,7 +5150,8 @@ static int gp_ae_awb_process(void *arg)
 		}					
 	}*/
 
-	gp_cdsp_awb_autoset_r_b_gain_boundary(awb, CdspDev->sensor_cdsp.wb_gain);
+	//gp_cdsp_awb_autoset_r_b_gain_boundary(awb, CdspDev->sensor_cdsp.wb_gain);
+	gp_cdsp_awb_set_r_b_gain_boundary(awb,95, 153, 64, 28);
 	
 	DEBUG("\r\n\r\n=========== AE & AWB Process Start =========\r\n\r\n");
 
@@ -5013,43 +5180,17 @@ static int gp_ae_awb_process(void *arg)
 	low_lum_switch_cnt = high_lum_switch_cnt = 0;
 	awb_low_lum_cnt = 0;
 	
-	targetY_low = (int)(CdspDev->ae_target_night * 0.7);
+	targetY_low = (int)(CdspDev->ae_target_night * 0.6);
 	if(targetY_low > (CdspDev->ae_target >> 1)) CdspDev->ae_target = CdspDev->ae_target/3;
 
 	awb_init_search = 0;
 	if(CdspDev->sensor_cdsp.awb_size == 62)
 	{
-		awb_uv_thr_t UVthr;
-		gpCdspWbGain2_t wb_gain2;
-		
-		wb_gain2.wbgain2en = ENABLE;
-		wb_gain2.rgain2 = 64;
-		wb_gain2.bgain2 = 64;
-		wb_gain2.ggain2 = 64;			
-		gpCdspSetWBGain2(&wb_gain2);
-
-		UVthr.UL1N1 = CdspDev->sensor_cdsp.awb_thr[19];
-		UVthr.UL1P1 = CdspDev->sensor_cdsp.awb_thr[20];
-		UVthr.VL1N1	= CdspDev->sensor_cdsp.awb_thr[21];
-		UVthr.VL1P1 = CdspDev->sensor_cdsp.awb_thr[22];
-
-		UVthr.UL1N2 = CdspDev->sensor_cdsp.awb_thr[23];
-		UVthr.UL1P2 = CdspDev->sensor_cdsp.awb_thr[24];
-		UVthr.VL1N2	= CdspDev->sensor_cdsp.awb_thr[25];
-		UVthr.VL1P2 = CdspDev->sensor_cdsp.awb_thr[26];
-
-		UVthr.UL1N3 = CdspDev->sensor_cdsp.awb_thr[27];
-		UVthr.UL1P3 = CdspDev->sensor_cdsp.awb_thr[28];
-		UVthr.VL1N3	= CdspDev->sensor_cdsp.awb_thr[29];
-		UVthr.VL1P3 = CdspDev->sensor_cdsp.awb_thr[30];
-		gpHalCdspSetAwbUVThr(&UVthr);
-
-		gp_cdsp_awb_set_mode(awb, AWB_AUTO_FIRST_SEARCH);
+		gp_awb_first_search(awb);
 		awb_init_search = 1;
-		printk("AWB_AUTO_FIRST_SEARCH\r\n");
 	}
 	
-	
+	awb_fail_cnt = 0;
 	pre_awb_ct = 50;
 	ae_frame_thr = awb_frame_thr = 3;
 	while(1) {
@@ -5114,17 +5255,19 @@ static int gp_ae_awb_process(void *arg)
 				ret = gp_cdsp_ae_calc_exp(ae, p_3a_result->ae_win, &seInfo, hist_hi, hist_lo);
 				seInfo.ae_ev_idx = gp_cdsp_ae_get_result_ev(ae);
 
-				//printk("ae lum = %d\r\n\r\n", gp_cdsp_ae_get_result_lum(ae));
-				
 				if(seInfo.ae_ev_idx != 0)
 				{	
 					memcpy(&CdspDev->sInfo, &seInfo, sizeof(sensor_exposure_t));
 
 					CdspDev->ae_awb_flag |= CDSP_AE_UPDATE;
+
+					//printk("\r\n\r\n** ### ae lum = %d, ret = %d, ev_idx = %d @@@@@@\r\n\r\n", gp_cdsp_ae_get_result_lum(ae), ret, seInfo.ae_ev_idx);
+					//show_ae_win(p_3a_result->ae_win);
 			
 					//DEBUG("lum = 0x%x\r\n",  gp_cdsp_ae_get_result_lum(ae));
 					//DEBUG("SetSensor: time = 0x%x, analogGain = 0x%x, digitalGain = 0x%x\r\n", seInfo.time, seInfo.analog_gain, seInfo.digital_gain);
-					
+					sensor_raw_idx = seInfo.sensor_ev_idx; //deyue add
+
 					#if 1
 					if(seInfo.sensor_ev_idx >= seInfo.night_ev_idx)
 					{ 	// low light
@@ -5192,6 +5335,8 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetEdgeLCoring(1, 1, 4, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 8, 0);
 						gpHalCdspSetYuvHAvg(3, 1, 2, 2);
+						//gpHalCdspSetYuvHAvg(3, 2, 2, 2);
+					//	gpHalCdspSetUvDivideEn(ENABLE);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[3] && seInfo.sensor_ev_idx >= CdspDev->sat_yuv_thr[2] && CdspDev->sat_contr_idx != 2)
 					{						
@@ -5209,6 +5354,7 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetEdgeLCoring(1, 1, 3, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 16, 0);
 						gpHalCdspSetYuvHAvg(3, 1, 1, 1);
+						//gpHalCdspSetUvDivideEn(ENABLE);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[2] && seInfo.sensor_ev_idx >= CdspDev->sat_yuv_thr[1] && CdspDev->sat_contr_idx != 1)
 					{						
@@ -5226,6 +5372,7 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetEdgeLCoring(0, 1, 3, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 24, 0);
 						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
+					//	gpHalCdspSetUvDivideEn(ENABLE);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[1] && CdspDev->sat_contr_idx != 0)
 					{						
@@ -5243,6 +5390,7 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetEdgeLCoring(0, 0, 2, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 64, 0);
 						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
+					//	gpHalCdspSetUvDivideEn(DISABLE);
 						//DEBUG("sat_contr_idx = %d\r\n", CdspDev->sat_contr_idx);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[0]) 
@@ -5252,6 +5400,7 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetEdgeLCoring(0, 0, 2, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 64, 0);
 						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
+					//	gpHalCdspSetUvDivideEn(DISABLE);
 					}
 					ae_stable = 0;
 					ae_frame_thr = 3;
@@ -5324,6 +5473,26 @@ static int gp_ae_awb_process(void *arg)
 				{
 					CdspDev->ae_awb_flag |= CDSP_AWB_SET_GAIN;
 				}
+				
+				#if 0
+				if(awb_ret == AWB_FAIL && awbmode != AWB_AUTO_FIRST_SEARCH) {awb_fail_cnt++; }//printk("awb_fail_cnt = %d\r\n", awb_fail_cnt);}
+				else if(awb_ret == AWB_SUCCESS_CVR || awb_ret == AWB_SUCCESS_DC) awb_fail_cnt -= 10;
+
+				if(awb_fail_cnt > 50) awb_fail_cnt = 50;
+				else if(awb_fail_cnt < 0) awb_fail_cnt = 0;
+
+				if(awb_fail_cnt > 30)
+				{
+					if(CdspDev->sensor_cdsp.awb_size == 62)
+					{
+						gp_awb_first_search(awb);
+						awb_init_search = 1;
+					}
+					else
+						gp_cdsp_awb_set_mode(awb, AWB_AUTO_CVR);
+				}
+				#endif
+				
 					
 				#if 1
 				
@@ -5375,7 +5544,7 @@ static int gp_ae_awb_process(void *arg)
 						if(gp_cdsp_ae_is_night(ae) == 1) 
 						{
 							//DEBUG("AWB Night\r\n");
-							awbmode = AWB_AUTO_CVR_NIGHT;
+							awbmode = AWB_AUTO_CVR;//AWB_AUTO_CVR_NIGHT;
 							gp_cdsp_awb_set_ct_offset(awb, CdspDev->wb_offset_night);
 						}
 						else if(awb_ret == AWB_FAIL) 
@@ -5395,7 +5564,7 @@ static int gp_ae_awb_process(void *arg)
 							awbmode = AWB_AUTO_CVR;
 							gp_cdsp_awb_set_ct_offset(awb, CdspDev->wb_offset_day);
 						}
-						awbmode = AWB_AUTO_CVR;
+						//awbmode = AWB_AUTO_CVR;
 						gp_cdsp_awb_set_mode(awb, awbmode);
 						gp_cdsp_awb_calc_gain(awb, &p_3a_result->awb_result, CdspDev->sensor_cdsp.wb_gain);
 
@@ -5484,7 +5653,10 @@ gp_cdsp_open(
 	if(CdspDev->OpenCnt == 0) 
 	{
 		int i, j;
-		
+
+		C_DMA_CH = 0;
+		_SET_YUV_PATH_ = 1;
+				
 		CdspDev->getSensorInfo = 0;
 		
 		gpCdspClockEnable(1);
@@ -5568,6 +5740,10 @@ gp_cdsp_release(
 		CdspDev->ae_awb_flag = 0;
 
 		// kill tasklet of sensor_set_exp_tasklet 
+		if(tasklet_enable_flag) {
+			tasklet_disable(&sensor_set_exp_tasklet);
+			tasklet_enable_flag = 0;
+		}
 		tasklet_kill(&sensor_set_exp_tasklet);
 
 		gpHalCdspSetIntEn(DISABLE, CDSP_INT_ALL);	
