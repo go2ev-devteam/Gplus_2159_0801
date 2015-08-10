@@ -84,6 +84,7 @@ char slide_show_flag = 0;
 UINT32 time_sync=0;
 static pthread_mutex_t key_mutex;
 
+void ap_setting_enter_key_active(void);
 extern int DV_task_entry(void);
 extern int DC_task_entry(void);
 extern int PLAYBACK_task_entry(void);
@@ -1012,11 +1013,30 @@ void ap_setting_mode_key_active(void)
 	ret = mq_send(menumodeMsgQ, &msg_id, 1, 0);		
 }
 
+void ap_setting_filelock_key_active(void)
+{
+    UINT8 msg_id;
+	int ret;
+	
+	if(dv_set.dv_ctrl == 1)
+	{
+		CVR_Set_PIPE_With_CMD(CMD_SET_LOCK_FILE,1);
+		dv_set.lock_flag = 1;
+		msg_id = dv_set.dv_UI_flag;
+		ret = mq_send(menumodeMsgQ, &msg_id, 1, 0);	
+		return;
+	}
+}
+
 void ap_setting_menu_key_active(void)
 {	
 	UINT8 msg_id;
 	int ret;
-
+	if(dv_set.dv_ctrl == 1)
+	{
+		return;
+	}
+	
 	#if ADAS_CALIBRATE
 	if(dv_set.GSensor_calibrate_flag>=ADAS_CALIBRATE_VERTICAL_SATTIC)
 	{//ADAS 调整界面，menu按键无效
@@ -1057,14 +1077,7 @@ void ap_setting_menu_key_active(void)
 		printf("usb mode or dc camera,do nothing menu key\n");
 		return;
 	}
-	if(dv_set.dv_ctrl == 1)
-	{
-		CVR_Set_PIPE_With_CMD(CMD_SET_LOCK_FILE,1);
-		dv_set.lock_flag = 1;
-		msg_id = dv_set.dv_UI_flag;
-		ret = mq_send(menumodeMsgQ, &msg_id, 1, 0);	
-		return;
-	}
+	
 	if(dv_set.menu_select_flag >= 1)//szk add 20141017
 	{
 		msg_id = dv_set.dv_UI_flag;
@@ -3319,7 +3332,11 @@ void *Key_Thread(void *arg)
 							timer_start.tv_sec = 0;
 							timer_start.tv_usec = 0;							
 						}
-					}					
+					}	
+					else if((event.code == KEY_MUTE)&&(event.value ==key_release))
+					{
+						ap_setting_filelock_key_active();	
+					}
 				}
 		}
 	//usleep(100);	

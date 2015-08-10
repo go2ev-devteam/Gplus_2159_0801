@@ -261,7 +261,7 @@ static int read_command(unsigned char reg,unsigned char *value)
 	printk("reg 0x%x,value 0x%x\r\n",reg,temp);
 	return 0;
 }
-
+#if 0
 static void init_disp_comond(void)
 {
 
@@ -343,6 +343,87 @@ static void init_disp_comond(void)
 	sent_command(0xA6,0x12); 
 	sent_command(0xA7,0x06);
 	sent_command(0x2B,0x01); 
+#endif
+
+	gp_gpio_release(cs_pin);
+	gp_gpio_release(data_pin);
+	gp_gpio_release(clk_pin);
+
+}
+
+#endif
+static void init_disp_comond(void)
+{
+
+	unsigned char value;
+	//init pin.
+	printk("[%s][%d]\r\n",__FUNCTION__,__LINE__);
+	
+	cs_pin = gp_gpio_request(MK_GPIO_INDEX(0,0,48,15), NULL ); //IOA15
+	data_pin = gp_gpio_request(MK_GPIO_INDEX(1,0,12,0), NULL ); //IOB0
+	clk_pin = gp_gpio_request(MK_GPIO_INDEX(1,0,13,1), NULL ); //IOB1
+
+	gp_gpio_set_output(cs_pin,1,0);
+	gp_gpio_set_output(data_pin,1,0);
+	gp_gpio_set_output(clk_pin,1,0);
+
+#if 0
+/*	sent_command(0x05,0x5f);
+	read_command(0x05,&value);
+	sent_command(0x05,0x1f);
+	read_command(0x05,&value);
+	sent_command(0x05,0x5f);
+	read_command(0x05,&value);
+	sent_command(0x2b,0x01);
+	read_command(0x2b,&value);
+	sent_command(0x00,0x09);
+	read_command(0x00,&value);
+	sent_command(0x01,0x9f);
+	read_command(0x01,&value);
+	sent_command(0x03,0x60);
+	read_command(0x03,&value);	
+	sent_command(0x0d,0x60);
+	read_command(0x0d,&value);	
+	sent_command(0x04,0x1b);
+	read_command(0x04,&value);
+	sent_command(0x16,0x04);
+	read_command(0x16,&value);*/
+#else
+
+	sent_command(0x05,0x1E);
+	
+	//{CMDDELAY_MS, 150},
+	
+	spi_delay(50);
+	
+	sent_command(0x05,0x5D); 
+	
+	//{CMDDELAY_MS, 150},
+	
+	spi_delay(50);
+	
+	sent_command(0x00,0x07);
+	sent_command(0x01,0x8c);
+	sent_command(0x03,0x2b);
+	sent_command(0x04,0x1b);
+	sent_command(0x00,0x0b);
+	sent_command(0x0b,0x81);
+	sent_command(0x06,0x15);
+	sent_command(0x07,0x32);
+	sent_command(0x0d,0x80);
+	sent_command(0x0e,0x3f);
+	sent_command(0x0f,0x3f);
+	sent_command(0x13,0x04);
+	sent_command(0x10,0x3f);
+	sent_command(0x11,0x3f);
+	sent_command(0x16,0x00);
+	sent_command(0x17,0x77);
+	sent_command(0x18,0x33);
+	sent_command(0x19,0x00);
+	sent_command(0x1a,0x10);
+	sent_command(0x95,0x80);
+	sent_command(0x2b,0x01);
+	 
 #endif
 
 	gp_gpio_release(cs_pin);

@@ -37,6 +37,7 @@ extern int 	adas_warning_flag;
 UINT8 old_battery=0;
 extern void USB_entry_init(void);
 extern void Power_off(void);
+extern void ap_setting_enter_key_active(void);
 /*========================================================
 DV menu config set/get function
 ==========================================================*/
@@ -1851,6 +1852,7 @@ UINT8 Speaker_set_power( int enable )
 void board_config_set_init(UINT8 type)
 {
 	UINT8 ret;
+	UINT8 msg_id;
 
 	if((type &0x01) != 0)
 	{
@@ -1911,6 +1913,7 @@ void board_config_set_init(UINT8 type)
 				{
 					USB_entry_init();
 				}
+				
 			}
 		}
 	}
@@ -1974,6 +1977,24 @@ void statusScanThread( void)
 			if((dv_set.usb_detect == 1)&&(dv_set.battery_state!=5))
 			{
 				USB_entry_init();
+			}
+			else
+			{
+				if((dv_set.sd_check == 0)||(dv_set.sd_check == 2))//当未插入sdc or 正在显示请插入sdc时
+				{
+					if(dv_set.sd_check == 0) //当未插入sdc时按下确定键，显示请插入sdc，显示时间为3s
+					{
+						dv_set.sd_check = 2;//show insert sdc
+						time_num = 2; //设置显示时间
+						msg_id = dv_set.dv_UI_flag;
+						mq_send(menumodeMsgQ, &msg_id, 1, 0);						
+					}
+						
+				}
+				else
+				{
+					ap_setting_enter_key_active();
+				}
 			}
 			dv_set.no_charge_flag = 0;
 		}

@@ -392,6 +392,7 @@ void DV_UI_foreground(void)
 		gp_Icon_draw(fb, resolution.width-Icon_Manager[ICON_BEEP_OFF-ap_state_config_ADAS_sound_get()].x_pos*HDMIxNum,resolution.height -Icon_Manager[ICON_BEEP_OFF-ap_state_config_ADAS_sound_get()].y_pos*HDMIxNum,resolution.width, resolution.height,ICON_BEEP_OFF-ap_state_config_ADAS_sound_get(),Icon_Manager[ICON_BEEP_OFF-ap_state_config_ADAS_sound_get()].tran_color);
 		
 	}
+	// show remain time
 	temp = time_num;
 	if(dv_set.dv_ctrl == 0)
 	{
@@ -430,7 +431,7 @@ void DV_UI_foreground(void)
 		ap_state_resource_string_ascii_draw((UINT16 *)fb, &ascii_str);			
 		fill_rectangle(fb,Icon_Manager[ICON_REDLIGHT].x_pos*HDMIxNum,Icon_Manager[ICON_REDLIGHT].y_pos*HDMIxNum ,resolution.width,resolution.height,Icon_Manager[ICON_REDLIGHT].icon_width,Icon_Manager[ICON_REDLIGHT].icon_height,TRANSPARENT_COLOR);
 	}
-	else
+	else//show record time
 	{
 		if(flip_flag == 0)
 		{
@@ -640,6 +641,7 @@ void DV_UI_foreground(void)
 		}
 	}
 #endif
+    //show park icon
 	if(foreground_draw_flag!=0)
 	{
 		if(setting_config_get(SET_GSENSOR1)!=0)
@@ -651,6 +653,7 @@ void DV_UI_foreground(void)
 			ascii_str.font_color = FONT_COLOR;
 		}
 	}
+	    //show g_sensor icon
 		if(DV_config_get(DV_GSENSOR)!=0 || da380_error||dv_set.GSensor_calibrate_iconflag)
 		{
 			if(da380_error) {
@@ -671,7 +674,8 @@ void DV_UI_foreground(void)
 			ap_state_resource_string_ascii_draw((UINT16 *)fb, &ascii_str);
 			ascii_str.font_color = FONT_COLOR;
 		}		
-	
+
+//show car_plate_number strings	
 #if CVR_PLATE_NUMBER
 	if(Global_User_Optins.item.carnum_enable) {
 		char str_buf[9] = {'\0'};
@@ -717,6 +721,7 @@ void DV_UI_foreground(void)
 		ap_state_resource_string_ascii_draw((UINT16 *)fb, &ascii_str);
 	}
 #endif
+     // show battery icon
 	//charge and battery 0: no power  1: zero battery 	2: one battery 3:two battery 4:three battery 5:charge  
 	if(dv_set.battery_state == 0)
 	{
@@ -742,6 +747,7 @@ void DV_UI_foreground(void)
 		gp_Icon_draw(fb, resolution.width-Icon_Manager[ICON_CHARGE+dv_set.battery_state].x_pos*HDMIxNum,resolution.height-Icon_Manager[ICON_CHARGE+dv_set.battery_state].y_pos*HDMIxNum,resolution.width, resolution.height,ICON_CHARGE+dv_set.battery_state,Icon_Manager[ICON_CHARGE+dv_set.battery_state].tran_color);
 	}
 
+	 // show date and time strings 
 	//date and time
 	RTC_get();	
 	ap_setting_date_time_string_process(0xFF,setting_config_get(SET_DATA_FORMAT));
@@ -774,6 +780,7 @@ void DV_UI_foreground(void)
 		ascii_str.pos_y = resolution.height - str_res.string_height - ICON_LEFT_Y_POS-Y_STEP;
 		fill_rectangle(fb,ascii_str.pos_x,ascii_str.pos_y ,resolution.width,resolution.height,str_res.string_width,str_res.string_height,TRANSPARENT_COLOR);	
 	}*/
+	//show lock icon
 	if(dv_set.lock_flag == 1)
 	{
 		gp_Icon_draw(fb, Icon_Manager[ICON_PROTECT_F].x_pos*HDMIxNum,Icon_Manager[ICON_PROTECT_F].y_pos*HDMIxNum,resolution.width, resolution.height,ICON_PROTECT_F,Icon_Manager[ICON_PROTECT_F].tran_color);		
