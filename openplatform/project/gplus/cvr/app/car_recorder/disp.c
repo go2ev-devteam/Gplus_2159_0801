@@ -33,6 +33,7 @@
 //#include "photo_decode.h" 
 //#include "image_decode.h"
 #include "gp_on2.h"
+#define ENABLE_TFT_GAMMA 1
 extern dv_set_t dv_set;
 char file_path[256];
 extern UINT8 HDMIxNum;
@@ -1720,7 +1721,70 @@ typedef struct dispManager_s {
 	int fbIndex;
 } dispManager_t;
 
+#if ENABLE_TFT_GAMMA
+//add tft gamma and color matrix
+#include <math.h>
+const int cmidx[] = { 10, 40, 70, 100, 130, 160, 190, 220, 250, 280, 310, 340 };
+const int cminf[] = { 5, 355, 256 };
+const float colormx[][12] = {
+{ 1.099720,-0.022308,-0.020913,-0.018723,1.043171,-0.019548,-0.008726,-0.009612,1.011875,0.000000,0.000000,0 },
+{ 1.124651,-0.027884,-0.026141,-0.023403,1.053964,-0.024435,-0.010907,-0.012015,1.014844,0.000000,0.000000,0 },
+{ 1.149581,-0.033461,-0.031369,-0.028084,1.064757,-0.029323,-0.013089,-0.014418,1.017813,0.000000,0.000000,0 },
+{ 1.174511,-0.039038,-0.036597,-0.032765,1.075549,-0.034210,-0.015270,-0.016821,1.020782,0.000000,0.000000,0 },
+{ 1.199441,-0.044615,-0.041825,-0.037446,1.086342,-0.039097,-0.017452,-0.019224,1.023750,0.000000,0.000000,0 },
+{ 1.199441,-0.044615,-0.041825,-0.037446,1.086342,-0.039097,-0.017452,-0.019224,1.023750,0.000000,0.000000,0 },
+{ 1.199441,-0.044615,-0.041825,-0.037446,1.086342,-0.039097,-0.017452,-0.019224,1.023750,0.000000,0.000000,0 },
+{ 1.199441,-0.044615,-0.041825,-0.037446,1.086342,-0.039097,-0.017452,-0.019224,1.023750,0.000000,0.000000,0 },
+{ 1.179497,-0.040154,-0.037643,-0.033701,1.077708,-0.035187,-0.015706,-0.017301,1.021375,0.000000,0.000000,0 },
+{ 1.159553,-0.035692,-0.033460,-0.029956,1.069074,-0.031277,-0.013961,-0.015379,1.019000,0.000000,0.000000,0 },
+{ 1.139609,-0.031231,-0.029278,-0.026212,1.060439,-0.027368,-0.012216,-0.013457,1.016625,0.000000,0.000000,0 },
+{ 1.119665,-0.026769,-0.025095,-0.022467,1.051805,-0.023458,-0.010471,-0.011534,1.014250,0.000000,0.000000,0 },
+};
+unsigned short cal_colormatrix(float value, int bit) 
+{
+	short ret;	
+	ret = value * (1<<bit);
+	return ret;
+}
+void Gamma_table_gen_12b(unsigned char *pIndexTable_R, unsigned char *pIndexTable_G, unsigned char *pIndexTable_B, float gamma_value_r, float gamma_value_g, float gamma_value_b)
+{
+	int i;
+	unsigned short temp;
+	unsigned char r_table[1024];
+	unsigned char g_table[1024];
+	unsigned char b_table[1024];
 
+	// Generic sRGB to RGB Gamma Curve
+	float sg_r = (float)(1.0 / (gamma_value_r));
+	float sg_g = (float)(1.0 / (gamma_value_g));
+	float sg_b = (float)(1.0 / (gamma_value_b));
+
+	for (i = 0; i < 1023; i++)
+	{
+		temp = (pow(i / 1023.0, (double)sg_r)*1023.0);
+		r_table[i] = (unsigned char) (temp >> 2) & 0xFF;
+	}
+		
+	
+	for (i = 0; i < 1023; i++)
+	{
+		temp = (pow(i / 1023.0, (double)sg_g)*1023.0);
+		g_table[i] = (unsigned char)(temp >> 2) & 0xFF;
+	}
+		
+
+	for (i = 0; i < 1023; i++)
+	{
+		temp = (pow(i / 1023.0, (double)sg_b)*1023.0);
+		b_table[i] = (unsigned char)(temp >> 2) & 0xFF;
+	}
+
+	
+	memcpy(pIndexTable_R, r_table, 1024 * sizeof(unsigned char));
+	memcpy(pIndexTable_G, g_table, 1024 * sizeof(unsigned char));
+	memcpy(pIndexTable_B, b_table, 1024 * sizeof(unsigned char));
+}
+#endif
 UINT32
 dispCreate(
 	HANDLE *pHandle,
@@ -1730,6 +1794,13 @@ dispCreate(
 {
 	dispManager_t *pDisp;
 	gp_disp_output_t dispOutput;
+	gp_disp_gammatable_t	pGammaTable_R;
+	gp_disp_gammatable_t	pGammaTable_G;
+	gp_disp_gammatable_t	pGammaTable_B;
+	gp_disp_dyncmtxindex_t cmindex;
+	gp_disp_dyncmtxinfo_t cminfo;
+	gp_disp_dyncmtxpara_t cmpara;	
+	int i;
 	gp_disp_pixelsize_t pixelSize;
 	pDisp = (dispManager_t *)malloc(sizeof(dispManager_t));
 	memset(pDisp, 0, sizeof(dispManager_t));
@@ -1766,21 +1837,36 @@ dispCreate(
 
 	if(dis_type == SP_DISP_OUTPUT_LCD)
 	{
+pGammaTable_R.id = SP_DISP_GAMMA_R;
+pGammaTable_G.id = SP_DISP_GAMMA_G;
+pGammaTable_B.id = SP_DISP_GAMMA_B;
+
+Gamma_table_gen_12b(pGammaTable_R.table, pGammaTable_G.table, pGammaTable_B.table, 1.1, 1.1, 1.1);
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_ENABLE, 0 );
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_PARAM, &pGammaTable_R );
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_PARAM, &pGammaTable_G );
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_PARAM, &pGammaTable_B );
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_ENABLE, 1 );
+
+	
 		pDisp->resolution.width = RESOLUTION_WIDTH;
 		pDisp->resolution.height = RESOLUTION_HEIGHT;		
 	}
 	#ifdef SYSCONFIG_DISP0_TVOUT
 	else if(dis_type == SP_DISP_OUTPUT_TV)
 	{
-		pDisp->resolution.width = 640;
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_ENABLE, 0 );
+	
+		pDisp->resolution.width = 640;        // 640  580
 		if(setting_config_get(SET_TV_MODE) == 0)
-		pDisp->resolution.height = 426;
+		pDisp->resolution.height = 426;       //426  526 
 		else
-		pDisp->resolution.height = 426+96;
+		pDisp->resolution.height = 426+96;        //426+96   526  
 	}
 	#endif
 	else
 	{
+ioctl(pDisp->fdDisp, DISPIO_SET_GAMMA_ENABLE, 0 );
 		pDisp->resolution.width = 1920;
 		pDisp->resolution.height = 1080;		
 	}		

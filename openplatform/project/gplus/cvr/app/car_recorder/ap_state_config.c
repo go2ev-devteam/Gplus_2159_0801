@@ -1993,7 +1993,10 @@ void statusScanThread( void)
 				}
 				else
 				{
-					ap_setting_enter_key_active();
+				    if( (Playmode_flag==CMD_VIDEO_MODE) && (dv_set.dv_UI_flag == DV_FOREGROUND_MODE))
+				    {
+						ap_setting_enter_key_active();
+				    }
 				}
 			}
 			dv_set.no_charge_flag = 0;

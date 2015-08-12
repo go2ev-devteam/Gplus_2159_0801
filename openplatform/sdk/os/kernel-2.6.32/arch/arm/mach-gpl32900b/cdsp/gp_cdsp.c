@@ -92,7 +92,7 @@ static int sensor_raw_idx = 0;
 #define RETURN(x)	{nRet = x; goto __return;}
 
 #define DERROR 	printk
-#if 1
+#if 0
 #define DEBUG	printk
 #else
 #define DEBUG(...)
@@ -5150,8 +5150,8 @@ static int gp_ae_awb_process(void *arg)
 		}					
 	}*/
 
-	//gp_cdsp_awb_autoset_r_b_gain_boundary(awb, CdspDev->sensor_cdsp.wb_gain);
-	gp_cdsp_awb_set_r_b_gain_boundary(awb,95, 153, 64, 28);
+	gp_cdsp_awb_autoset_r_b_gain_boundary(awb, CdspDev->sensor_cdsp.wb_gain);
+	//gp_cdsp_awb_set_r_b_gain_boundary(awb,95, 153, 64, 28);
 	
 	DEBUG("\r\n\r\n=========== AE & AWB Process Start =========\r\n\r\n");
 
@@ -5334,9 +5334,8 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetBadPixel(80,80,80);				
 						gpHalCdspSetEdgeLCoring(1, 1, 4, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 8, 0);
-						gpHalCdspSetYuvHAvg(3, 1, 2, 2);
-						//gpHalCdspSetYuvHAvg(3, 2, 2, 2);
-					//	gpHalCdspSetUvDivideEn(ENABLE);
+						gpHalCdspSetYuvHAvg(3, 2, 2, 2);
+						//gpHalCdspSetUvDivideEn(ENABLE);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[3] && seInfo.sensor_ev_idx >= CdspDev->sat_yuv_thr[2] && CdspDev->sat_contr_idx != 2)
 					{						
@@ -5371,8 +5370,8 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetBadPixel(120,120,120);				
 						gpHalCdspSetEdgeLCoring(0, 1, 3, 0);
 						gpHalCdspSetNdEdgeLCoring(2, 2, 24, 0);
-						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
-					//	gpHalCdspSetUvDivideEn(ENABLE);
+						gpHalCdspSetYuvHAvg(3, 0, 1, 1);
+						//gpHalCdspSetUvDivideEn(ENABLE);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[1] && CdspDev->sat_contr_idx != 0)
 					{						
@@ -5387,10 +5386,10 @@ static int gp_ae_awb_process(void *arg)
 
 						gpHalCdspSetIntplThr(CdspDev->intpl_low_thr, CdspDev->intpl_hi_thr);
 						gpHalCdspSetBadPixel(160,160,160);
-						gpHalCdspSetEdgeLCoring(0, 0, 2, 0);
-						gpHalCdspSetNdEdgeLCoring(2, 2, 64, 0);
+						gpHalCdspSetEdgeLCoring(0, 0, 3, 0);
+						gpHalCdspSetNdEdgeLCoring(3, 2, 32, 0);
 						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
-					//	gpHalCdspSetUvDivideEn(DISABLE);
+						//gpHalCdspSetUvDivideEn(DISABLE);
 						//DEBUG("sat_contr_idx = %d\r\n", CdspDev->sat_contr_idx);
 					}
 					else if(seInfo.sensor_ev_idx < CdspDev->sat_yuv_thr[0]) 
@@ -5398,9 +5397,9 @@ static int gp_ae_awb_process(void *arg)
 						gpHalCdspSetIntplThr(CdspDev->intpl_low_thr, CdspDev->intpl_hi_thr);
 						gpHalCdspSetBadPixel(160,160,160);
 						gpHalCdspSetEdgeLCoring(0, 0, 2, 0);
-						gpHalCdspSetNdEdgeLCoring(2, 2, 64, 0);
+						gpHalCdspSetNdEdgeLCoring(4, 4, 64, 0);
 						gpHalCdspSetYuvHAvg(3, 0, 0, 0);
-					//	gpHalCdspSetUvDivideEn(DISABLE);
+						gpHalCdspSetUvDivideEn(DISABLE);
 					}
 					ae_stable = 0;
 					ae_frame_thr = 3;
@@ -5424,7 +5423,7 @@ static int gp_ae_awb_process(void *arg)
 			int lum = gp_cdsp_ae_get_result_lum(ae);
 			awb_frame++;
 			//if(ae_stable == 1 && awb_frame >= 2)
-			if(awb_frame >= 2 && (CdspDev->ae_awb_flag & CDSP_AWB_SET_GAIN) == 0 && lum > targetY_low)
+			if(awb_frame >= 2 && (CdspDev->ae_awb_flag & CDSP_AWB_SET_GAIN) == 0)// && lum > targetY_low)
 			{
 				gpCdspWbGain2_t wb_gain2;
 				int ret, awb_ret;

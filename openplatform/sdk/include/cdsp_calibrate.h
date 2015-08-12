@@ -38,7 +38,7 @@
 #define LENS_3006 5
 #define LENS_7023 6
 
-#define LENS_CALI LENS_GP
+#define LENS_CALI LENS_3006//LENS_GP
 
 #if (LENS_GP == LENS_CALI)
 #include "Lens/cdsp_calibrate_gp.h"

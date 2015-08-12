@@ -10,7 +10,7 @@
 #define LENS_3006 5
 #define LENS_7023 6
 
-#define LENS LENS_GP
+#define LENS LENS_3006//LENS_GP
 
 #if (LENS_GP == LENS)
 #include "Lens/cdsp_preference_gp.h"

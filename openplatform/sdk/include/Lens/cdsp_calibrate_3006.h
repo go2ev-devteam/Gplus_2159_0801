@@ -296,6 +296,7 @@ static const unsigned int g_ar0330_lens_3006_gamma_table_test[] =
 
 #endif
 };
+#if 1
 static const short g_ar0330_lens_3006_color_matrix4gamma045[9] = 
 {	
 	(short) ((1.41201774840148200000 *64) + 0.5),
@@ -308,7 +309,20 @@ static const short g_ar0330_lens_3006_color_matrix4gamma045[9] =
 	(short) ((-0.73283253611320409000 *64) + 0.5),
 	(short) ((1.64322585480754090000 *64) + 0.5)
 };
-
+#else
+static const short g_ar0330_lens_3006_color_matrix4gamma045[9] = 
+{
+	(short) ((1.42018114698052970000 *64) + 0.5),     
+	(short) ((-0.32074144171390329000*64) + 0.5),    
+	(short) ((-0.09943970526662629400*64) + 0.5),    
+	(short) ((-0.35250924020193392000*64) + 0.5),   
+	(short) ((1.36067901444311870000 *64) + 0.5),    
+	(short) ((-0.00816977424118477470*64) + 0.5),    
+	(short) ((0.01667441856474540000 *64) + 0.5),    
+	(short) ((-0.72159042306956311000*64) + 0.5),    
+	(short) ((1.70491600450481770000 *64) + 0.5)    
+};
+#endif
 static const short g_ar0330_lens_3006_awb_thr[31] = 
 {
 	200, // awbwinthr
